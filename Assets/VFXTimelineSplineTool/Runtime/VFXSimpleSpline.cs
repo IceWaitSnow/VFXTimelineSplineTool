@@ -175,7 +175,7 @@ namespace VFXTimelineSplineTool
     [ExecuteAlways]
     public class VFXSimpleSpline : MonoBehaviour
     {
-        public const string ToolVersion = "2.6";
+        public const string ToolVersion = VFXSplineToolVersion.Version;
 
         [Header("Path Settings")]
         public VFXSplinePathMode pathMode = VFXSplinePathMode.CatmullRom;

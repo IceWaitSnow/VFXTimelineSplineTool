@@ -57,7 +57,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
             EditorGUILayout.Space(4);
             EditorGUILayout.LabelField("VFX Timeline Spline Tool v" + VFXSimpleSpline.ToolVersion, EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("3D Catmull-Rom 自由曲线路径。v2.6.2 正式工作流：Spline Path 负责路径，VFXSplineAnimator 负责路径运动，VFXSplineAnchor 负责粒子/面片/爆点挂点；Dynamic Start / End Binding 可让路径起点和终点跟随场景物体。", MessageType.Info);
+            EditorGUILayout.HelpBox("3D Catmull-Rom 自由曲线路径。v" + VFXSplineToolVersion.Version + " 正式工作流：Spline Path 负责路径，VFXSplineAnimator 负责路径运动，VFXSplineAnchor 负责粒子/面片/爆点挂点；Dynamic Start / End Binding 可让路径起点和终点跟随场景物体。", MessageType.Info);
 
             serializedObject.Update();
 

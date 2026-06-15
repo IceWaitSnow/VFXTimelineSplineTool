@@ -16,8 +16,8 @@ namespace VFXTimelineSplineTool.EditorTools
         public override void OnInspectorGUI()
         {
             VFXSplineAnimator animator = (VFXSplineAnimator)target;
-            EditorGUILayout.LabelField("VFX Spline Animator - 路径运动控制 v2.6.3", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("推荐流程：用 Unity 原生 AnimationClip / Timeline Animation Track 给 Progress 打关键帧，控制物体沿 Spline 运动。v2.6.3 支持 Bake Progress Source 下拉选择，并可直接读取 Timeline 上绑定当前物体的 Animation Track。", MessageType.Info);
+            EditorGUILayout.LabelField("VFX Spline Animator - 路径运动控制 v" + VFXSplineToolVersion.Version, EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("推荐流程：Spline 负责路径，Unity 原生 AnimationClip / Timeline Animation Track 给 Progress 打关键帧，最后 Bake 成普通 Transform AnimationClip。v" + VFXSplineToolVersion.Version + " 加强了 Timeline Infinite Clip 自动识别和 Progress 曲线读取。", MessageType.Info);
 
             serializedObject.Update();
             DrawProperty("spline", "Spline");
