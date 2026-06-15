@@ -702,6 +702,22 @@ namespace VFXTimelineSplineTool.EditorTools
                     SetSelectedBezierHandleMode(spline, selected, VFXBezierHandleMode.AutoSmooth);
             }
 
+            EditorGUILayout.LabelField("Point Type Presets", EditorStyles.miniBoldLabel);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Corner"))
+                    ApplySelectedBezierPointPreset(spline, selected, VFXBezierPointPreset.Corner);
+
+                if (GUILayout.Button("Smooth"))
+                    ApplySelectedBezierPointPreset(spline, selected, VFXBezierPointPreset.Smooth);
+
+                if (GUILayout.Button("Symmetric"))
+                    ApplySelectedBezierPointPreset(spline, selected, VFXBezierPointPreset.Symmetric);
+
+                if (GUILayout.Button("Auto"))
+                    ApplySelectedBezierPointPreset(spline, selected, VFXBezierPointPreset.AutoSmooth);
+            }
+
             if (GUILayout.Button("Auto Smooth All Bezier Points"))
             {
                 Undo.RecordObject(spline, "Auto Smooth All Bezier Points");
@@ -719,6 +735,14 @@ namespace VFXTimelineSplineTool.EditorTools
             SceneView.RepaintAll();
         }
 
+        private static void ApplySelectedBezierPointPreset(VFXSimpleSpline spline, int selected, VFXBezierPointPreset preset)
+        {
+            Undo.RecordObject(spline, "Apply Bezier Point Preset");
+            spline.ApplyBezierPointPreset(selected, preset);
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
         private void OnSceneGUI()
         {
             VFXSimpleSpline spline = (VFXSimpleSpline)target;
@@ -730,6 +754,8 @@ namespace VFXTimelineSplineTool.EditorTools
     [InitializeOnLoad]
     public static class VFXSplineSceneDrawer
     {
+        private static double suppressBezierToolbarUntil;
+
         static VFXSplineSceneDrawer()
         {
             SceneView.duringSceneGui -= DuringSceneGUI;
@@ -873,6 +899,83 @@ namespace VFXTimelineSplineTool.EditorTools
                     SceneView.RepaintAll();
                 }
             }
+
+            if (spline.pathMode == VFXSplinePathMode.Bezier)
+                HandleBezierCurveContextMenu(spline);
+        }
+
+        private static void HandleBezierCurveContextMenu(VFXSimpleSpline spline)
+        {
+            Event e = Event.current;
+            if (e == null || e.type != EventType.MouseDown || e.button != 1)
+                return;
+
+            float rawProgress;
+            if (!TryFindNearestRawProgressOnCurve(spline, e.mousePosition, out rawProgress))
+                return;
+
+            GenericMenu menu = new GenericMenu();
+            menu.AddItem(new GUIContent("Insert Bezier Point Here"), false, () =>
+            {
+                Undo.RecordObject(spline, "Insert Bezier Point");
+                int inserted = spline.InsertBezierPointAtRawProgress(rawProgress);
+                if (inserted >= 0)
+                {
+                    EditorUtility.SetDirty(spline);
+                    SceneView.RepaintAll();
+                }
+            });
+            e.Use();
+            suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
+            menu.ShowAsContext();
+        }
+
+        private static bool TryFindNearestRawProgressOnCurve(VFXSimpleSpline spline, Vector2 mousePosition, out float rawProgress)
+        {
+            rawProgress = 0f;
+            if (spline == null || spline.GetActivePointCount() < 2)
+                return false;
+
+            int samples = Mathf.Max(24, spline.resolution * 2);
+            float bestDistance = float.MaxValue;
+            float bestProgress = 0f;
+            Vector2 previousGui = HandleUtility.WorldToGUIPoint(spline.GetPoint(0f, false));
+
+            for (int i = 1; i <= samples; i++)
+            {
+                float progress = i / (float)samples;
+                Vector2 currentGui = HandleUtility.WorldToGUIPoint(spline.GetPoint(progress, false));
+                float segmentLerp;
+                float distance = DistanceToGuiSegment(mousePosition, previousGui, currentGui, out segmentLerp);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestProgress = Mathf.Lerp((i - 1) / (float)samples, progress, segmentLerp);
+                }
+
+                previousGui = currentGui;
+            }
+
+            if (bestDistance > 10f)
+                return false;
+
+            rawProgress = Mathf.Clamp01(bestProgress);
+            return true;
+        }
+
+        private static float DistanceToGuiSegment(Vector2 point, Vector2 a, Vector2 b, out float segmentLerp)
+        {
+            Vector2 ab = b - a;
+            float lengthSq = ab.sqrMagnitude;
+            if (lengthSq <= 0.0001f)
+            {
+                segmentLerp = 0f;
+                return Vector2.Distance(point, a);
+            }
+
+            segmentLerp = Mathf.Clamp01(Vector2.Dot(point - a, ab) / lengthSq);
+            Vector2 projected = a + ab * segmentLerp;
+            return Vector2.Distance(point, projected);
         }
 
         private static void HandleBezierPointContextMenu(VFXSimpleSpline spline, int index, Vector3 pointWorld, float pointSize)
@@ -891,11 +994,7 @@ namespace VFXTimelineSplineTool.EditorTools
             EditorUtility.SetDirty(spline);
 
             GenericMenu menu = new GenericMenu();
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Free, "Handle Mode/Free Handles");
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Aligned, "Handle Mode/Aligned");
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Mirrored, "Handle Mode/Mirrored");
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.AutoSmooth, "Handle Mode/Auto Smooth");
-            menu.AddSeparator("");
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.AutoSmooth, "Auto Smooth");
             menu.AddItem(new GUIContent("Auto Smooth All"), false, () =>
             {
                 Undo.RecordObject(spline, "Auto Smooth All Bezier Points");
@@ -903,8 +1002,45 @@ namespace VFXTimelineSplineTool.EditorTools
                 EditorUtility.SetDirty(spline);
                 SceneView.RepaintAll();
             });
+            menu.AddSeparator("");
+            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Corner, "Point Type/Corner");
+            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Smooth, "Point Type/Smooth");
+            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Symmetric, "Point Type/Symmetric");
+            menu.AddSeparator("");
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Free, "Handle Mode/Free Handles");
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Aligned, "Handle Mode/Aligned");
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Mirrored, "Handle Mode/Mirrored");
+            menu.AddSeparator("");
+            if (spline.GetActivePointCount() > 2)
+            {
+                menu.AddItem(new GUIContent("Delete This Point"), false, () =>
+                {
+                    Undo.RecordObject(spline, "Delete Bezier Point");
+                    spline.RemovePointAt(index);
+                    spline.selectedPointIndex = Mathf.Clamp(index, 0, spline.GetActivePointCount() - 1);
+                    EditorUtility.SetDirty(spline);
+                    SceneView.RepaintAll();
+                });
+            }
+            else
+            {
+                menu.AddDisabledItem(new GUIContent("Delete This Point"));
+            }
             e.Use();
+            suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
+            SceneView.RepaintAll();
             menu.ShowAsContext();
+        }
+
+        private static void AddBezierPointPresetMenuItem(GenericMenu menu, VFXSimpleSpline spline, int index, VFXBezierPointPreset preset, string label)
+        {
+            menu.AddItem(new GUIContent(label), false, () =>
+            {
+                Undo.RecordObject(spline, "Apply Bezier Point Preset");
+                spline.ApplyBezierPointPreset(index, preset);
+                EditorUtility.SetDirty(spline);
+                SceneView.RepaintAll();
+            });
         }
 
         private static void AddBezierModeMenuItem(GenericMenu menu, VFXSimpleSpline spline, int index, VFXBezierHandleMode mode, string label)
@@ -923,8 +1059,11 @@ namespace VFXTimelineSplineTool.EditorTools
             if (spline.bezierPoints == null || index < 0 || index >= spline.bezierPoints.Count || spline.bezierPoints[index] == null)
                 return;
 
+            if (EditorApplication.timeSinceStartup < suppressBezierToolbarUntil)
+                return;
+
             Vector2 guiPoint = HandleUtility.WorldToGUIPoint(pointWorld + Vector3.up * pointSize * 2.2f);
-            Rect rect = new Rect(guiPoint.x + 12f, guiPoint.y - 18f, 228f, 22f);
+            Rect rect = new Rect(guiPoint.x + 12f, guiPoint.y - 18f, 174f, 22f);
             Event e = Event.current;
             if (e != null)
             {
@@ -942,7 +1081,6 @@ namespace VFXTimelineSplineTool.EditorTools
             DrawBezierModeButton(spline, index, VFXBezierHandleMode.Free, "Free");
             DrawBezierModeButton(spline, index, VFXBezierHandleMode.Aligned, "Align");
             DrawBezierModeButton(spline, index, VFXBezierHandleMode.Mirrored, "Mirror");
-            DrawBezierModeButton(spline, index, VFXBezierHandleMode.AutoSmooth, "Auto");
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
             Handles.EndGUI();

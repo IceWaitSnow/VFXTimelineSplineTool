@@ -340,7 +340,7 @@ MonoBehaviour:
   alwaysShowPathInSceneView: 1
   showPointLabels: 1
   showAllPointHandles: 0
-  selectedPointIndex: 1
+  selectedPointIndex: 2
   showProgressMarks: 0
   progressMarkCount: 4
   progressMarksUseDistance: 1
@@ -366,17 +366,17 @@ MonoBehaviour:
     outTangent: {x: 0.8458181, y: 0.37279382, z: 0.2506379}
     handleMode: 3
   - position: {x: 2.5374544, y: 1.1183815, z: 0.75191367}
-    inTangent: {x: -0.6942118, y: -0.16666667, z: -0.10350728}
-    outTangent: {x: 0.6942118, y: 0.16666667, z: 0.10350728}
+    inTangent: {x: -0.9290655, y: -0.081003055, z: -0.030820927}
+    outTangent: {x: 0.9290655, y: 0.081003055, z: 0.030820927}
     handleMode: 3
-  - position: {x: 4.165271, y: 1, z: 0.6210437}
-    inTangent: {x: -0.5770909, y: 0.18639691, z: -0.20159882}
-    outTangent: {x: 0.5770909, y: -0.18639691, z: 0.20159882}
-    handleMode: 3
+  - position: {x: 5.5743933, y: 0.48601833, z: 0.18492556}
+    inTangent: {x: -1.1903715, y: 0.22009358, z: -0.36712313}
+    outTangent: {x: 0.9492054, y: -0.38975444, z: 0.3818593}
+    handleMode: 0
   - position: {x: 6, y: 0, z: 1.9615066}
-    inTangent: {x: -0.60661554, y: 0.34648705, z: -0.43138385}
-    outTangent: {x: 0.60661554, y: -0.34648705, z: 0.43138385}
-    handleMode: 2
+    inTangent: {x: -0.3002076, y: 0.14614479, z: -0.38073814}
+    outTangent: {x: 0.6847267, y: -0.33333334, z: 0.86840385}
+    handleMode: 0
   events: []
 --- !u!1 &330585543
 GameObject:
@@ -733,7 +733,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 734935803}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.15925506, y: 0.5862435, z: 0.11887492, w: 0.78538215}
+  m_LocalRotation: {x: -0.15948786, y: 0.58602244, z: 0.118988544, w: 0.78548276}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0

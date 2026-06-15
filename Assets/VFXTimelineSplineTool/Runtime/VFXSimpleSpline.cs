@@ -19,6 +19,14 @@ namespace VFXTimelineSplineTool
         AutoSmooth
     }
 
+    public enum VFXBezierPointPreset
+    {
+        Corner,
+        Smooth,
+        Symmetric,
+        AutoSmooth
+    }
+
     public enum VFXSplineEventTriggerType
     {
         None,
@@ -576,6 +584,55 @@ namespace VFXTimelineSplineTool
             MarkDistanceCacheDirty();
         }
 
+        public int InsertBezierPointAtRawProgress(float progress)
+        {
+            EnsureBezierPoints();
+            if (bezierPoints.Count < 2)
+                return -1;
+
+            progress = Mathf.Clamp01(progress);
+            float scaled = progress * (bezierPoints.Count - 1);
+            int index = Mathf.FloorToInt(scaled);
+            if (index >= bezierPoints.Count - 1) index = bezierPoints.Count - 2;
+            float t = Mathf.Clamp01(scaled - index);
+
+            VFXBezierPoint leftPoint = bezierPoints[index];
+            VFXBezierPoint rightPoint = bezierPoints[index + 1];
+            if (leftPoint == null || rightPoint == null)
+                return -1;
+
+            Vector3 p0 = GetEffectiveBezierPosition(index);
+            Vector3 p1 = p0 + leftPoint.outTangent;
+            Vector3 p3 = GetEffectiveBezierPosition(index + 1);
+            Vector3 p2 = p3 + rightPoint.inTangent;
+
+            Vector3 a = Vector3.Lerp(p0, p1, t);
+            Vector3 b = Vector3.Lerp(p1, p2, t);
+            Vector3 c = Vector3.Lerp(p2, p3, t);
+            Vector3 d = Vector3.Lerp(a, b, t);
+            Vector3 e = Vector3.Lerp(b, c, t);
+            Vector3 split = Vector3.Lerp(d, e, t);
+
+            leftPoint.outTangent = a - p0;
+            rightPoint.inTangent = c - p3;
+            leftPoint.handleMode = VFXBezierHandleMode.Free;
+            rightPoint.handleMode = VFXBezierHandleMode.Free;
+
+            VFXBezierPoint newPoint = new VFXBezierPoint()
+            {
+                position = split,
+                inTangent = d - split,
+                outTangent = e - split,
+                handleMode = VFXBezierHandleMode.Free
+            };
+
+            int insertIndex = index + 1;
+            bezierPoints.Insert(insertIndex, newPoint);
+            selectedPointIndex = insertIndex;
+            MarkDistanceCacheDirty();
+            return insertIndex;
+        }
+
         public void RemovePointAt(int index)
         {
             if (pathMode == VFXSplinePathMode.Bezier)
@@ -736,6 +793,39 @@ namespace VFXTimelineSplineTool
             MarkDistanceCacheDirty();
         }
 
+        public void ApplyBezierPointPreset(int index, VFXBezierPointPreset preset)
+        {
+            EnsureBezierPoints();
+            if (index < 0 || index >= bezierPoints.Count || bezierPoints[index] == null) return;
+
+            VFXBezierPoint point = bezierPoints[index];
+            switch (preset)
+            {
+                case VFXBezierPointPreset.Corner:
+                    point.handleMode = VFXBezierHandleMode.Free;
+                    point.inTangent = Vector3.zero;
+                    point.outTangent = Vector3.zero;
+                    break;
+
+                case VFXBezierPointPreset.Smooth:
+                    point.handleMode = VFXBezierHandleMode.Aligned;
+                    SetBezierTangentsFromNeighbors(index, false);
+                    break;
+
+                case VFXBezierPointPreset.Symmetric:
+                    point.handleMode = VFXBezierHandleMode.Mirrored;
+                    SetBezierTangentsFromNeighbors(index, true);
+                    break;
+
+                case VFXBezierPointPreset.AutoSmooth:
+                    point.handleMode = VFXBezierHandleMode.AutoSmooth;
+                    ApplyAutoSmoothBezierPoint(index);
+                    break;
+            }
+
+            MarkDistanceCacheDirty();
+        }
+
         public Vector3 GetBezierInTangentWorldPosition(int index)
         {
             if (bezierPoints == null || index < 0 || index >= bezierPoints.Count || bezierPoints[index] == null)
@@ -847,6 +937,17 @@ namespace VFXTimelineSplineTool
             point.outTangent = tangent;
         }
 
+        private void SetBezierTangentsFromNeighbors(int index, bool mirrored)
+        {
+            if (bezierPoints == null || index < 0 || index >= bezierPoints.Count || bezierPoints[index] == null)
+                return;
+
+            VFXBezierPoint point = bezierPoints[index];
+            Vector3 tangent = EstimateBezierTangentFromBezierList(index);
+            point.inTangent = -tangent;
+            point.outTangent = mirrored ? tangent.normalized * tangent.magnitude : tangent;
+        }
+
         public void ConvertCatmullRomToBezier()
         {
             EnsureLocalPoints();
@@ -906,25 +1007,68 @@ namespace VFXTimelineSplineTool
         private VFXBezierPoint CreateBezierPointForBezierList(Vector3 position, int index)
         {
             VFXBezierPoint point = new VFXBezierPoint(position);
+            Vector3 tangent = EstimateBezierTangentFromBezierList(index, position);
+            point.inTangent = -tangent;
+            point.outTangent = tangent;
+            point.handleMode = VFXBezierHandleMode.Aligned;
+            return point;
+        }
+
+        private Vector3 EstimateBezierTangentFromBezierList(int index)
+        {
+            if (bezierPoints == null || index < 0 || index >= bezierPoints.Count || bezierPoints[index] == null)
+                return Vector3.right * 0.5f;
+
+            Vector3 position = GetEffectiveBezierPosition(index);
+            Vector3 tangent;
+            if (index <= 0)
+            {
+                Vector3 next = bezierPoints.Count > 1 && bezierPoints[1] != null ? GetEffectiveBezierPosition(1) : position + Vector3.right;
+                tangent = (next - position) / 3f;
+            }
+            else if (index >= bezierPoints.Count - 1)
+            {
+                Vector3 prev = bezierPoints[index - 1] != null ? GetEffectiveBezierPosition(index - 1) : position - Vector3.right;
+                tangent = (position - prev) / 3f;
+            }
+            else
+            {
+                Vector3 prev = bezierPoints[index - 1] != null ? GetEffectiveBezierPosition(index - 1) : position - Vector3.right;
+                Vector3 next = bezierPoints[index + 1] != null ? GetEffectiveBezierPosition(index + 1) : position + Vector3.right;
+                tangent = (next - prev) / 6f;
+            }
+
+            return tangent.sqrMagnitude < 0.000001f ? Vector3.right * 0.5f : tangent;
+        }
+
+        private Vector3 EstimateBezierTangentFromBezierList(int index, Vector3 position)
+        {
             Vector3 tangent = Vector3.right * 0.5f;
 
             if (bezierPoints != null && bezierPoints.Count > 0)
             {
                 if (index <= 0)
-                    tangent = (bezierPoints[0].position - position) / 3f;
+                {
+                    Vector3 next = bezierPoints[0] != null ? bezierPoints[0].position : position + Vector3.right;
+                    tangent = (next - position) / 3f;
+                }
                 else if (index >= bezierPoints.Count)
-                    tangent = (position - bezierPoints[bezierPoints.Count - 1].position) / 3f;
+                {
+                    Vector3 prev = bezierPoints[bezierPoints.Count - 1] != null ? bezierPoints[bezierPoints.Count - 1].position : position - Vector3.right;
+                    tangent = (position - prev) / 3f;
+                }
                 else
-                    tangent = (bezierPoints[index].position - bezierPoints[index - 1].position) / 6f;
+                {
+                    Vector3 prev = bezierPoints[index - 1] != null ? GetEffectiveBezierPosition(index - 1) : position - Vector3.right;
+                    Vector3 next = bezierPoints[index] != null ? GetEffectiveBezierPosition(index) : position + Vector3.right;
+                    tangent = (next - prev) / 6f;
+                }
             }
 
             if (tangent.sqrMagnitude < 0.000001f)
                 tangent = Vector3.right * 0.5f;
 
-            point.inTangent = -tangent;
-            point.outTangent = tangent;
-            point.handleMode = VFXBezierHandleMode.Aligned;
-            return point;
+            return tangent;
         }
 
         private Vector3 EstimateBezierTangent(int index, Vector3 position)
