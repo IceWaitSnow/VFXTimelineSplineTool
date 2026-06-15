@@ -1,0 +1,74 @@
+name: Sync Spline Tool Version
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Replace hard-coded spline tool version strings
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              'Assets/VFXTimelineSplineTool/Runtime/VFXSimpleSpline.cs': [
+                  ('public const string ToolVersion = "2.6";',
+                   'public const string ToolVersion = VFXSplineToolVersion.Version;'),
+              ],
+              'Assets/VFXTimelineSplineTool/Editor/VFXSplineAnimatorEditor.cs': [
+                  ('EditorGUILayout.LabelField("VFX Spline Animator - 路径运动控制 v2.6.3", EditorStyles.boldLabel);',
+                   'EditorGUILayout.LabelField("VFX Spline Animator - 路径运动控制 v" + VFXSplineToolVersion.Version, EditorStyles.boldLabel);'),
+                  ('EditorGUILayout.HelpBox("推荐流程：用 Unity 原生 AnimationClip / Timeline Animation Track 给 Progress 打关键帧，控制物体沿 Spline 运动。v2.6.3 支持 Bake Progress Source 下拉选择，并可直接读取 Timeline 上绑定当前物体的 Animation Track。", MessageType.Info);',
+                   'EditorGUILayout.HelpBox("推荐流程：Spline 负责路径，Unity 原生 AnimationClip / Timeline Animation Track 给 Progress 打关键帧，最后 Bake 成普通 Transform AnimationClip。v" + VFXSplineToolVersion.Version + " 加强了 Timeline Infinite Clip 自动识别和 Progress 曲线读取。", MessageType.Info);'),
+              ],
+              'Assets/VFXTimelineSplineTool/Editor/VFXSimpleSplineEditor.cs': [
+                  ('EditorGUILayout.HelpBox("3D Catmull-Rom 自由曲线路径。v2.6.2 正式工作流：Spline Path 负责路径，VFXSplineAnimator 负责路径运动，VFXSplineAnchor 负责粒子/面片/爆点挂点；Dynamic Start / End Binding 可让路径起点和终点跟随场景物体。", MessageType.Info);',
+                   'EditorGUILayout.HelpBox("3D Catmull-Rom 自由曲线路径。v" + VFXSplineToolVersion.Version + " 正式工作流：Spline Path 负责路径，VFXSplineAnimator 负责路径运动，VFXSplineAnchor 负责粒子/面片/爆点挂点；Dynamic Start / End Binding 可让路径起点和终点跟随场景物体。", MessageType.Info);'),
+              ],
+          }
+
+          changed = False
+          for file_path, pairs in replacements.items():
+              path = Path(file_path)
+              text = path.read_text(encoding='utf-8')
+              original = text
+              for old, new in pairs:
+                  text = text.replace(old, new)
+              if text != original:
+                  path.write_text(text, encoding='utf-8', newline='')
+                  changed = True
+
+          workflow = Path('.github/workflows/spline-version-sync.yml')
+          if workflow.exists():
+              workflow.unlink()
+              changed = True
+
+          if not changed:
+              print('No changes required.')
+          PY
+
+      - name: Commit synchronized version strings
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Assets/VFXTimelineSplineTool/Runtime/VFXSimpleSpline.cs \
+                  Assets/VFXTimelineSplineTool/Editor/VFXSplineAnimatorEditor.cs \
+                  Assets/VFXTimelineSplineTool/Editor/VFXSimpleSplineEditor.cs \
+                  .github/workflows/spline-version-sync.yml
+          git commit -m "Sync spline tool version strings"
+          git push
