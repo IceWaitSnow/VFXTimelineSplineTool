@@ -362,17 +362,17 @@ MonoBehaviour:
   - {x: 6, y: 0, z: 0}
   bezierPoints:
   - position: {x: 0, y: 0, z: 0}
-    inTangent: {x: -0.8458181, y: -0.37279382, z: -0.2506379}
-    outTangent: {x: 0.8458181, y: 0.37279382, z: 0.2506379}
-    handleMode: 3
-  - position: {x: 2.5374544, y: 1.1183815, z: 0.75191367}
-    inTangent: {x: -0.9290655, y: -0.081003055, z: -0.030820927}
-    outTangent: {x: 0.9290655, y: 0.081003055, z: 0.030820927}
-    handleMode: 3
-  - position: {x: 5.5743933, y: 0.48601833, z: 0.18492556}
-    inTangent: {x: -1.1903715, y: 0.22009358, z: -0.36712313}
-    outTangent: {x: 0.9492054, y: -0.38975444, z: 0.3818593}
+    inTangent: {x: 0, y: 0, z: 0}
+    outTangent: {x: 0, y: 0, z: 0}
     handleMode: 0
+  - position: {x: 3.828756, y: 2.7124856, z: -3.4152608}
+    inTangent: {x: -1.719238, y: -0.92345166, z: -0.10230398}
+    outTangent: {x: 1.719238, y: 0.92345166, z: 0.10230398}
+    handleMode: 2
+  - position: {x: 5.5743933, y: 0.48601833, z: 0.18492556}
+    inTangent: {x: 0.065377474, y: 0.5003441, z: -0.8587501}
+    outTangent: {x: -0.044182777, y: -0.33813778, z: 0.5803523}
+    handleMode: 1
   - position: {x: 6, y: 0, z: 1.9615066}
     inTangent: {x: -0.3002076, y: 0.14614479, z: -0.38073814}
     outTangent: {x: 0.6847267, y: -0.33333334, z: 0.86840385}
@@ -733,7 +733,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 734935803}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.15948786, y: 0.58602244, z: 0.118988544, w: 0.78548276}
+  m_LocalRotation: {x: -0.055037726, y: 0.94279844, z: 0.19727762, w: 0.26302773}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -762,6 +762,33 @@ MonoBehaviour:
   forwardAxis: 0
   rotationOffsetEuler: {x: 0, y: 0, z: 0}
   fallbackForward: {x: 0, y: 0, z: 1}
+  stableUpVector: {x: 0, y: 1, z: 0}
+  bankAngle: 0
+  useBankAngleCurve: 0
+  bankAngleCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
   previewInEditMode: 1
   applyOnValidate: 1
   showCurrentProgressPoint: 1
@@ -772,6 +799,7 @@ MonoBehaviour:
   bakeRotation: 1
   bakeUseProgressCurve: 0
   bakeProgressSource: 4
+  bakeSpace: 0
   bakeProgressCurve:
     serializedVersion: 2
     m_Curve:
@@ -808,6 +836,7 @@ MonoBehaviour:
   bakeOptimizeCurves: 0
   bakePositionTolerance: 0.005
   bakeRotationTolerance: 0.25
+  lastBakeReport: 
   triggerEvents: 0
   triggerEventsInEditMode: 0
 --- !u!95 &734935809
