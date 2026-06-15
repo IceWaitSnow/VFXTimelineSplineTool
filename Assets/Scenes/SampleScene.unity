@@ -169,7 +169,6 @@ GameObject:
   - component: {fileID: 298195729}
   - component: {fileID: 298195733}
   - component: {fileID: 298195732}
-  - component: {fileID: 298195731}
   - component: {fileID: 298195730}
   m_Layer: 0
   m_Name: Plane
@@ -214,28 +213,6 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!64 &298195731
-MeshCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 298195728}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 5
-  m_Convex: 0
-  m_CookingOptions: 30
-  m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!23 &298195732
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -340,7 +317,7 @@ MonoBehaviour:
   alwaysShowPathInSceneView: 1
   showPointLabels: 1
   showAllPointHandles: 0
-  selectedPointIndex: 2
+  selectedPointIndex: 11
   showProgressMarks: 0
   progressMarkCount: 4
   progressMarksUseDistance: 1
@@ -356,35 +333,72 @@ MonoBehaviour:
   showDynamicBindingLabels: 1
   distanceSampleResolution: 256
   localPoints:
-  - {x: 0, y: 0, z: 0}
-  - {x: 2.6305034, y: 1.1183815, z: -1.2820252}
-  - {x: 3.7200682, y: 1, z: 0.04348421}
-  - {x: 6, y: 0, z: 0}
+  - {x: 3, y: 0, z: 0}
+  - {x: 2.598076, y: 0, z: 1.5}
+  - {x: 1.4999999, y: 0, z: 2.5980763}
+  - {x: -0.00000013113416, y: 0, z: 3}
+  - {x: -1.5000002, y: 0, z: 2.598076}
+  - {x: -2.598076, y: 0, z: 1.5000002}
+  - {x: -3, y: 0, z: -0.00000026226832}
+  - {x: -2.598076, y: 0, z: -1.4999999}
+  - {x: -1.4999998, y: 0, z: -2.5980763}
+  - {x: 0.00000003577464, y: 0, z: -3}
+  - {x: 1.4999998, y: 0, z: -2.5980763}
+  - {x: 2.5980768, y: 0, z: -1.4999993}
+  - {x: 3, y: 0, z: 0.00000052453663}
   bezierPoints:
-  - position: {x: 0, y: 0, z: 0}
-    inTangent: {x: 0, y: 0, z: 0}
-    outTangent: {x: 0, y: 0, z: 0}
-    handleMode: 0
-  - position: {x: 1.9433594, y: 2.7124856, z: -4.326468}
-    inTangent: {x: -1.719238, y: -0.92345166, z: -0.10230398}
-    outTangent: {x: 0.68874717, y: 0.36994576, z: 0.040984154}
-    handleMode: 0
-  - position: {x: 2.83918, y: 2.469926, z: -0.29833865}
-    inTangent: {x: -0.32746077, y: 0.27075523, z: -0.9280003}
-    outTangent: {x: 0.32746077, y: -0.27075523, z: 0.9280003}
-    handleMode: 3
-  - position: {x: 3.908124, y: 1.0879542, z: 1.241534}
-    inTangent: {x: -0.58956075, y: 0.2727363, z: 0.07818058}
-    outTangent: {x: 0.67725945, y: -0.3133067, z: -0.08981021}
-    handleMode: 0
-  - position: {x: 5.5743933, y: 0.48601833, z: 0.18492556}
-    inTangent: {x: 0.02094984, y: 0.16033086, z: -0.27517885}
-    outTangent: {x: -0.044182777, y: -0.33813778, z: 0.5803523}
-    handleMode: 0
-  - position: {x: 6, y: 0, z: 1.9615066}
-    inTangent: {x: -0.3002076, y: 0.14614479, z: -0.38073814}
-    outTangent: {x: 0.6847267, y: -0.33333334, z: 0.86840385}
-    handleMode: 0
+  - position: {x: 3, y: 0, z: 0}
+    inTangent: {x: 0.13397463, y: -0, z: -0.5}
+    outTangent: {x: -0.13397463, y: 0, z: 0.5}
+    handleMode: 1
+  - position: {x: 2.598076, y: 0, z: 1.5}
+    inTangent: {x: 0.25000003, y: -0, z: -0.43301272}
+    outTangent: {x: -0.25000003, y: 0, z: 0.43301272}
+    handleMode: 1
+  - position: {x: 1.4999999, y: 0, z: 2.5980763}
+    inTangent: {x: 0.43301272, y: -0, z: -0.25}
+    outTangent: {x: -0.43301272, y: 0, z: 0.25}
+    handleMode: 1
+  - position: {x: -0.00000013113416, y: 0, z: 3}
+    inTangent: {x: 0.5, y: -0, z: 0.00000003973643}
+    outTangent: {x: -0.5, y: 0, z: -0.00000003973643}
+    handleMode: 1
+  - position: {x: -1.5000002, y: 0, z: 2.598076}
+    inTangent: {x: 0.43301263, y: -0, z: 0.24999996}
+    outTangent: {x: -0.43301263, y: 0, z: -0.24999996}
+    handleMode: 1
+  - position: {x: -2.598076, y: 0, z: 1.5000002}
+    inTangent: {x: 0.24999996, y: -0, z: 0.43301272}
+    outTangent: {x: -0.24999996, y: 0, z: -0.43301272}
+    handleMode: 1
+  - position: {x: -3, y: 0, z: -0.00000026226832}
+    inTangent: {x: -0, y: -0, z: 0.5}
+    outTangent: {x: 0, y: 0, z: -0.5}
+    handleMode: 1
+  - position: {x: -2.598076, y: 0, z: -1.4999999}
+    inTangent: {x: -0.25000003, y: -0, z: 0.4330127}
+    outTangent: {x: 0.25000003, y: 0, z: -0.4330127}
+    handleMode: 1
+  - position: {x: -1.4999998, y: 0, z: -2.5980763}
+    inTangent: {x: -0.4330127, y: -0, z: 0.25000003}
+    outTangent: {x: 0.4330127, y: 0, z: -0.25000003}
+    handleMode: 1
+  - position: {x: 0.00000003577464, y: 0, z: -3}
+    inTangent: {x: -0.4999999, y: -0, z: -0}
+    outTangent: {x: 0.4999999, y: 0, z: 0}
+    handleMode: 1
+  - position: {x: 1.4999998, y: 0, z: -2.5980763}
+    inTangent: {x: -0.4330128, y: -0, z: -0.25000012}
+    outTangent: {x: 0.4330128, y: 0, z: 0.25000012}
+    handleMode: 1
+  - position: {x: 2.5980768, y: 0, z: -1.4999993}
+    inTangent: {x: -0.25000003, y: -0, z: -0.4330128}
+    outTangent: {x: 0.25000003, y: 0, z: 0.4330128}
+    handleMode: 1
+  - position: {x: 3, y: 0, z: 0.00000052453663}
+    inTangent: {x: -0.13397439, y: -0, z: -0.4999999}
+    outTangent: {x: 0.13397439, y: 0, z: 0.4999999}
+    handleMode: 1
   events: []
 --- !u!1 &330585543
 GameObject:
@@ -741,8 +755,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 734935803}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.020075152, y: 0.9716957, z: 0.21765067, w: 0.08962499}
-  m_LocalPosition: {x: 0.1986634, y: 0.714209, z: -1.6054038}
+  m_LocalRotation: {x: -0, y: -0.14072901, z: -0, w: 0.99004817}
+  m_LocalPosition: {x: 2.7675533, y: 0, z: 1.0873994}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -802,7 +816,7 @@ MonoBehaviour:
   showCurrentProgressPoint: 1
   previewColor: {r: 0, g: 1, b: 0, a: 1}
   bakeFrameRate: 60
-  bakeDuration: 2.1666667
+  bakeDuration: 6.0333333
   bakePosition: 1
   bakeRotation: 1
   bakeUseProgressCurve: 0
@@ -847,12 +861,12 @@ MonoBehaviour:
   lastBakeReport: 'Bake Report
 
     Output: Assets/Animations/SplineBakes/Cube_SplineBake
-    1.anim
+    3.anim
 
-    Duration: 2.167s | FrameRate: 60 | Frames: 131
+    Duration: 6.033s | FrameRate: 60 | Frames: 363
 
     Keyframe Step:
-    1 | Before Optimize: 131 | After Optimize: 131 | Reduction: 0.0%
+    1 | Before Optimize: 363 | After Optimize: 363 | Reduction: 0.0%
 
     Progress
     Source: TimelineBoundAnimationTrack | Bake Space: RelativeToParent
@@ -861,10 +875,10 @@ MonoBehaviour:
     Position: True | Bake Rotation: True | Rotation Mode: Full3D
 
     Distance Based:
-    True | Path Length: 13.128
+    True | Path Length: 18.812
 
-    Timeline Source: Infinite Clip | Track: Animation
-    Track (Infinite Clip) | Clip: Recorded'
+    Timeline Source: Timeline Clips | Track: Animation
+    Track | Clips: 2'
   triggerEvents: 0
   triggerEventsInEditMode: 0
 --- !u!95 &734935809
@@ -1095,7 +1109,7 @@ PlayableDirector:
   m_GameObject: {fileID: 1298885222}
   m_Enabled: 1
   serializedVersion: 3
-  m_PlayableAsset: {fileID: 11400000, guid: 0037d0ebb1e60b8479e8eda95539e6cd, type: 2}
+  m_PlayableAsset: {fileID: 11400000, guid: 0c56e120d8d29c841b39496c1efe787a, type: 2}
   m_InitialState: 1
   m_WrapMode: 2
   m_DirectorUpdateMode: 1
@@ -1104,6 +1118,10 @@ PlayableDirector:
   - key: {fileID: 6828609543552009026, guid: 0037d0ebb1e60b8479e8eda95539e6cd, type: 2}
     value: {fileID: 734935809}
   - key: {fileID: -3479445025828553153, guid: 0037d0ebb1e60b8479e8eda95539e6cd, type: 2}
+    value: {fileID: 298195730}
+  - key: {fileID: 6721553281129944116, guid: 0c56e120d8d29c841b39496c1efe787a, type: 2}
+    value: {fileID: 734935809}
+  - key: {fileID: -5247425547772081272, guid: 0c56e120d8d29c841b39496c1efe787a, type: 2}
     value: {fileID: 298195730}
   m_ExposedReferences:
     m_References: []

@@ -1,11 +1,11 @@
-VFX Timeline Spline Tool v2.6.3.3 使用说明
+VFX Timeline Spline Tool v2.7.0 使用说明
 
 核心模块：
 1. VFX Simple Spline Path：编辑 3D Catmull-Rom 路径，支持进度刻度、方向箭头、形状预设、自定义路径预设、动态起终点绑定。
 2. VFXSplineAnimator：让物体沿路径运动，可用 Animation Track 给 Progress 打关键帧，也可使用 Timeline 快速模式。
 3. VFXSplineAnchor：路径上的特效挂点，粒子、面片、爆点可以作为子物体跟随路径位置。
 
-v2.6.3.3 新增：Bake To AnimationClip
+v2.7.0 包含：Bake To AnimationClip
 - 在 VFXSplineAnimator Inspector 中找到 Bake To AnimationClip / 烘焙。
 - 设置 Frame Rate、Duration、是否烘焙 Position / Rotation、保存目录和 Clip 名称。
 - 点击 Bake To AnimationClip 后，会生成普通 Unity AnimationClip。
@@ -28,7 +28,7 @@ v2.6.3.3 新增：Bake To AnimationClip
 
 
 ========================
- v2.6.3.3 Bake Simplify / 烘焙关键帧简化
+ v2.7.0 Bake Simplify / 烘焙关键帧简化
 ========================
 在 VFXSplineAnimator 的 Bake To AnimationClip 面板中新增：
 

@@ -53,6 +53,29 @@ namespace VFXTimelineSplineTool
             Transform target = playerData as Transform;
             if (target == null || spline == null) return;
 
+            Vector3 position;
+            Quaternion rotation;
+            bool hasRotation;
+            float p;
+            EvaluatePose(playable, target, out position, out rotation, out hasRotation, out p);
+
+            target.position = position;
+            if (hasRotation)
+                target.rotation = rotation;
+
+            ProcessEvents(p);
+        }
+
+        public bool EvaluatePose(Playable playable, Transform target, out Vector3 position, out Quaternion rotation, out bool hasRotation, out float evaluatedProgress)
+        {
+            position = target != null ? target.position : Vector3.zero;
+            rotation = target != null ? target.rotation : Quaternion.identity;
+            hasRotation = false;
+            evaluatedProgress = 0f;
+
+            if (target == null || spline == null)
+                return false;
+
             float normalizedTime;
 
             if (loopPlayback)
@@ -77,7 +100,8 @@ namespace VFXTimelineSplineTool
             else
                 p = Mathf.Clamp01(p);
 
-            target.position = spline.GetPoint(p, useDistanceBasedProgress) + positionOffset;
+            evaluatedProgress = p;
+            position = spline.GetPoint(p, useDistanceBasedProgress) + positionOffset;
 
             if (followRotation && rotationMode != VFXSplineRotationMode.None)
             {
@@ -85,14 +109,19 @@ namespace VFXTimelineSplineTool
                 if (tangent.sqrMagnitude < 0.000001f)
                     tangent = fallbackForward.sqrMagnitude > 0.000001f ? fallbackForward.normalized : Vector3.forward;
 
-                Quaternion rot = BuildRotation(target, tangent) * Quaternion.Euler(rotationOffsetEuler);
-                target.rotation = rot;
+                rotation = BuildRotation(target, tangent) * Quaternion.Euler(rotationOffsetEuler);
+                hasRotation = true;
             }
 
-            if (triggerEvents && Application.isPlaying && spline.events != null)
-                CheckEvents(p);
+            return true;
+        }
 
-            previousProgress = p;
+        public void ProcessEvents(float evaluatedProgress)
+        {
+            if (triggerEvents && Application.isPlaying && spline.events != null)
+                CheckEvents(evaluatedProgress);
+
+            previousProgress = evaluatedProgress;
             hasPrevious = true;
         }
 

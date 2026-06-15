@@ -321,26 +321,48 @@ namespace VFXTimelineSplineTool
         public Vector3 GetPointByDistanceProgress(float distanceProgress)
         {
             distanceProgress = Mathf.Clamp01(distanceProgress);
+
+            float rawProgress;
+            if (!TryDistanceProgressToRawProgress(distanceProgress, out rawProgress))
+                return GetPointByRawProgress(distanceProgress);
+
+            return GetPointByRawProgress(rawProgress);
+        }
+
+        public bool TryDistanceProgressToRawProgress(float distanceProgress, out float rawProgress)
+        {
+            distanceProgress = Mathf.Clamp01(distanceProgress);
+            rawProgress = distanceProgress;
             RebuildDistanceCacheIfNeeded();
 
-            if (cachedDistance.Count < 2 || cachedLength <= 0.00001f)
-                return GetPointByRawProgress(distanceProgress);
+            if (cachedDistance.Count < 2 || cachedT.Count != cachedDistance.Count || cachedLength <= 0.00001f)
+                return false;
 
             float targetDistance = distanceProgress * cachedLength;
 
-            for (int i = 1; i < cachedDistance.Count; i++)
+            if (targetDistance <= 0f)
             {
-                if (cachedDistance[i] >= targetDistance)
-                {
-                    float d0 = cachedDistance[i - 1];
-                    float d1 = cachedDistance[i];
-                    float lerp = Mathf.Approximately(d0, d1) ? 0f : Mathf.InverseLerp(d0, d1, targetDistance);
-                    float rawT = Mathf.Lerp(cachedT[i - 1], cachedT[i], lerp);
-                    return GetPointByRawProgress(rawT);
-                }
+                rawProgress = 0f;
+                return true;
             }
 
-            return GetPointByRawProgress(1f);
+            if (targetDistance >= cachedLength)
+            {
+                rawProgress = 1f;
+                return true;
+            }
+
+            int index = cachedDistance.BinarySearch(targetDistance);
+            if (index < 0)
+                index = ~index;
+
+            index = Mathf.Clamp(index, 1, cachedDistance.Count - 1);
+
+            float d0 = cachedDistance[index - 1];
+            float d1 = cachedDistance[index];
+            float lerp = Mathf.Approximately(d0, d1) ? 0f : Mathf.InverseLerp(d0, d1, targetDistance);
+            rawProgress = Mathf.Clamp01(Mathf.Lerp(cachedT[index - 1], cachedT[index], lerp));
+            return true;
         }
 
         public Vector3 GetPointByRawProgress(float progress)

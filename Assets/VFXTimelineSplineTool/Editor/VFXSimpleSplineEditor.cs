@@ -755,22 +755,47 @@ namespace VFXTimelineSplineTool.EditorTools
     public static class VFXSplineSceneDrawer
     {
         private static double suppressBezierToolbarUntil;
+        private static readonly List<VFXSimpleSpline> cachedSplines = new List<VFXSimpleSpline>();
+        private static bool splinesCacheDirty = true;
 
         static VFXSplineSceneDrawer()
         {
             SceneView.duringSceneGui -= DuringSceneGUI;
             SceneView.duringSceneGui += DuringSceneGUI;
+            EditorApplication.hierarchyChanged -= MarkSplinesCacheDirty;
+            EditorApplication.hierarchyChanged += MarkSplinesCacheDirty;
+        }
+
+        private static void MarkSplinesCacheDirty()
+        {
+            splinesCacheDirty = true;
+        }
+
+        private static void RefreshSplinesCacheIfNeeded()
+        {
+            if (!splinesCacheDirty)
+                return;
+
+            cachedSplines.Clear();
+            cachedSplines.AddRange(Object.FindObjectsOfType<VFXSimpleSpline>());
+            splinesCacheDirty = false;
         }
 
         private static void DuringSceneGUI(SceneView view)
         {
             if (Event.current == null || Event.current.type != EventType.Repaint) return;
 
-            VFXSimpleSpline[] splines = Object.FindObjectsOfType<VFXSimpleSpline>();
-            for (int i = 0; i < splines.Length; i++)
+            RefreshSplinesCacheIfNeeded();
+            for (int i = cachedSplines.Count - 1; i >= 0; i--)
             {
-                VFXSimpleSpline spline = splines[i];
-                if (spline == null || !spline.alwaysShowPathInSceneView) continue;
+                VFXSimpleSpline spline = cachedSplines[i];
+                if (spline == null)
+                {
+                    cachedSplines.RemoveAt(i);
+                    continue;
+                }
+
+                if (!spline.alwaysShowPathInSceneView) continue;
                 if (Selection.activeGameObject == spline.gameObject) continue;
                 DrawSpline(spline, false);
             }

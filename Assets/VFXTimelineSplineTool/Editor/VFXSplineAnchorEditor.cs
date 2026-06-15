@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -14,7 +15,7 @@ namespace VFXTimelineSplineTool.EditorTools
             VFXSplineAnchor anchor = (VFXSplineAnchor)target;
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("VFX Spline Anchor - 路径特效挂点 v2.6.2", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("VFX Spline Anchor - 路径特效挂点 v" + VFXSplineToolVersion.Version, EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("把这个物体固定到 Spline 的某个 Progress 位置。粒子、面片、爆点可以作为它的子物体，再用 Timeline 原生 Control Track / Activation Track 控制播放。Follow Animator Progress 模式可以跟随运动物体的路径进度，并用 Progress Offset 做前后错位。", MessageType.Info);
 
             serializedObject.Update();
@@ -219,21 +220,47 @@ namespace VFXTimelineSplineTool.EditorTools
     [InitializeOnLoad]
     public static class VFXSplineAnchorSceneDrawer
     {
+        private static readonly List<VFXSplineAnchor> cachedAnchors = new List<VFXSplineAnchor>();
+        private static bool anchorsCacheDirty = true;
+
         static VFXSplineAnchorSceneDrawer()
         {
             SceneView.duringSceneGui -= DuringSceneGUI;
             SceneView.duringSceneGui += DuringSceneGUI;
+            EditorApplication.hierarchyChanged -= MarkAnchorsCacheDirty;
+            EditorApplication.hierarchyChanged += MarkAnchorsCacheDirty;
+        }
+
+        private static void MarkAnchorsCacheDirty()
+        {
+            anchorsCacheDirty = true;
+        }
+
+        private static void RefreshAnchorsCacheIfNeeded()
+        {
+            if (!anchorsCacheDirty)
+                return;
+
+            cachedAnchors.Clear();
+            cachedAnchors.AddRange(Object.FindObjectsOfType<VFXSplineAnchor>());
+            anchorsCacheDirty = false;
         }
 
         private static void DuringSceneGUI(SceneView view)
         {
             if (Event.current == null || Event.current.type != EventType.Repaint) return;
 
-            VFXSplineAnchor[] anchors = Object.FindObjectsOfType<VFXSplineAnchor>();
-            for (int i = 0; i < anchors.Length; i++)
+            RefreshAnchorsCacheIfNeeded();
+            for (int i = cachedAnchors.Count - 1; i >= 0; i--)
             {
-                VFXSplineAnchor anchor = anchors[i];
-                if (anchor == null || anchor.GetActiveSpline() == null || !anchor.showSceneLabel) continue;
+                VFXSplineAnchor anchor = cachedAnchors[i];
+                if (anchor == null)
+                {
+                    cachedAnchors.RemoveAt(i);
+                    continue;
+                }
+
+                if (anchor.GetActiveSpline() == null || !anchor.showSceneLabel) continue;
                 if (Selection.activeGameObject == anchor.gameObject) continue;
                 VFXSplineAnchorEditor.DrawAnchorHandle(anchor, false);
             }
