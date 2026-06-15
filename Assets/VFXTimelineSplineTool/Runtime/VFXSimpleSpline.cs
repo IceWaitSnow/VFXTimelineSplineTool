@@ -5,6 +5,20 @@ using UnityEngine.Events; // 仅用于兼容旧版 Path Events 数据。v2.0 正
 
 namespace VFXTimelineSplineTool
 {
+    public enum VFXSplinePathMode
+    {
+        CatmullRom,
+        Bezier
+    }
+
+    public enum VFXBezierHandleMode
+    {
+        Free,
+        Aligned,
+        Mirrored,
+        AutoSmooth
+    }
+
     public enum VFXSplineEventTriggerType
     {
         None,
@@ -132,12 +146,31 @@ namespace VFXTimelineSplineTool
         }
     }
 
+    [Serializable]
+    public class VFXBezierPoint
+    {
+        public Vector3 position;
+        public Vector3 inTangent;
+        public Vector3 outTangent;
+        public VFXBezierHandleMode handleMode = VFXBezierHandleMode.Aligned;
+
+        public VFXBezierPoint() { }
+
+        public VFXBezierPoint(Vector3 position)
+        {
+            this.position = position;
+            inTangent = Vector3.left * 0.5f;
+            outTangent = Vector3.right * 0.5f;
+        }
+    }
+
     [ExecuteAlways]
     public class VFXSimpleSpline : MonoBehaviour
     {
         public const string ToolVersion = "2.6";
 
         [Header("Path Settings")]
+        public VFXSplinePathMode pathMode = VFXSplinePathMode.CatmullRom;
         public Color pathColor = new Color(1f, 0.68f, 0.02f, 1f);
         public Color progressMarkColor = new Color(0.1f, 0.72f, 1f, 1f);
         [HideInInspector] public Color eventColor = new Color(1f, 0.25f, 0.1f, 1f); // v2.0 起隐藏：事件系统保留为旧工程兼容。
@@ -183,6 +216,9 @@ namespace VFXTimelineSplineTool
             new Vector3(6f, 0f, 0f)
         };
 
+        [Header("Bezier Points - Local Space")]
+        public List<VFXBezierPoint> bezierPoints = new List<VFXBezierPoint>();
+
         [HideInInspector] public List<VFXSplineEvent> events = new List<VFXSplineEvent>(); // 保留旧版数据兼容，Inspector 默认不显示。
 
         [NonSerialized] private bool cacheDirty = true;
@@ -204,12 +240,8 @@ namespace VFXTimelineSplineTool
 
         private void OnValidate()
         {
-            if (localPoints == null) localPoints = new List<Vector3>();
-            if (localPoints.Count < 2)
-            {
-                while (localPoints.Count < 2)
-                    localPoints.Add(Vector3.right * localPoints.Count);
-            }
+            EnsureLocalPoints();
+            EnsureBezierPoints();
 
             resolution = Mathf.Clamp(resolution, 8, 256);
             distanceSampleResolution = Mathf.Clamp(distanceSampleResolution, 32, 2048);
@@ -306,6 +338,9 @@ namespace VFXTimelineSplineTool
         public Vector3 GetPointByRawProgress(float progress)
         {
             progress = Mathf.Clamp01(progress);
+            if (pathMode == VFXSplinePathMode.Bezier)
+                return GetBezierPointByRawProgress(progress);
+
             int count = localPoints != null ? localPoints.Count : 0;
             if (count == 0) return transform.position;
             if (count == 1) return transform.TransformPoint(GetEffectiveLocalPoint(0));
@@ -327,6 +362,26 @@ namespace VFXTimelineSplineTool
             return transform.TransformPoint(local);
         }
 
+        private Vector3 GetBezierPointByRawProgress(float progress)
+        {
+            EnsureBezierPoints();
+
+            int count = bezierPoints != null ? bezierPoints.Count : 0;
+            if (count == 0) return transform.position;
+            if (count == 1) return transform.TransformPoint(GetEffectiveBezierPosition(0));
+
+            float scaled = progress * (count - 1);
+            int index = Mathf.FloorToInt(scaled);
+            if (index >= count - 1) index = count - 2;
+            float t = scaled - index;
+
+            Vector3 p0 = GetEffectiveBezierPosition(index);
+            Vector3 p1 = p0 + bezierPoints[index].outTangent;
+            Vector3 p3 = GetEffectiveBezierPosition(index + 1);
+            Vector3 p2 = p3 + bezierPoints[index + 1].inTangent;
+            return transform.TransformPoint(CubicBezier(p0, p1, p2, p3, t));
+        }
+
         public Vector3 GetEffectiveLocalPoint(int index)
         {
             if (localPoints == null || localPoints.Count == 0) return Vector3.zero;
@@ -344,38 +399,73 @@ namespace VFXTimelineSplineTool
             return localPoints[index];
         }
 
+        public Vector3 GetEffectiveBezierPosition(int index)
+        {
+            if (bezierPoints == null || bezierPoints.Count == 0) return Vector3.zero;
+            index = Mathf.Clamp(index, 0, bezierPoints.Count - 1);
+
+            if (enableDynamicStartEndBinding)
+            {
+                if (index == 0 && dynamicStartTransform != null)
+                    return transform.InverseTransformPoint(dynamicStartTransform.position);
+
+                if (index == bezierPoints.Count - 1 && dynamicEndTransform != null)
+                    return transform.InverseTransformPoint(dynamicEndTransform.position);
+            }
+
+            VFXBezierPoint point = bezierPoints[index];
+            return point != null ? point.position : Vector3.zero;
+        }
+
         public Vector3 GetEffectiveWorldPoint(int index)
         {
-            return transform.TransformPoint(GetEffectiveLocalPoint(index));
+            return transform.TransformPoint(pathMode == VFXSplinePathMode.Bezier ? GetEffectiveBezierPosition(index) : GetEffectiveLocalPoint(index));
         }
 
         public bool IsPointDynamicallyBound(int index)
         {
-            if (!enableDynamicStartEndBinding || localPoints == null || localPoints.Count == 0) return false;
+            int count = GetActivePointCount();
+            if (!enableDynamicStartEndBinding || count == 0) return false;
             if (index == 0 && dynamicStartTransform != null) return true;
-            if (index == localPoints.Count - 1 && dynamicEndTransform != null) return true;
+            if (index == count - 1 && dynamicEndTransform != null) return true;
             return false;
         }
 
         public Transform GetDynamicBindingTransformForPoint(int index)
         {
-            if (!enableDynamicStartEndBinding || localPoints == null || localPoints.Count == 0) return null;
+            int count = GetActivePointCount();
+            if (!enableDynamicStartEndBinding || count == 0) return null;
             if (index == 0) return dynamicStartTransform;
-            if (index == localPoints.Count - 1) return dynamicEndTransform;
+            if (index == count - 1) return dynamicEndTransform;
             return null;
         }
 
         public void ApplyDynamicBindingToLocalPoints()
         {
-            if (localPoints == null || localPoints.Count < 2) return;
-
             if (enableDynamicStartEndBinding)
             {
-                if (dynamicStartTransform != null)
-                    localPoints[0] = transform.InverseTransformPoint(dynamicStartTransform.position);
+                if (pathMode == VFXSplinePathMode.Bezier)
+                {
+                    EnsureBezierPoints();
+                    if (bezierPoints.Count < 2) return;
 
-                if (dynamicEndTransform != null)
-                    localPoints[localPoints.Count - 1] = transform.InverseTransformPoint(dynamicEndTransform.position);
+                    if (dynamicStartTransform != null)
+                        bezierPoints[0].position = transform.InverseTransformPoint(dynamicStartTransform.position);
+
+                    if (dynamicEndTransform != null)
+                        bezierPoints[bezierPoints.Count - 1].position = transform.InverseTransformPoint(dynamicEndTransform.position);
+                }
+                else
+                {
+                    EnsureLocalPoints();
+                    if (localPoints.Count < 2) return;
+
+                    if (dynamicStartTransform != null)
+                        localPoints[0] = transform.InverseTransformPoint(dynamicStartTransform.position);
+
+                    if (dynamicEndTransform != null)
+                        localPoints[localPoints.Count - 1] = transform.InverseTransformPoint(dynamicEndTransform.position);
+                }
             }
 
             MarkDistanceCacheDirty();
@@ -395,6 +485,8 @@ namespace VFXTimelineSplineTool
             if (!hasLastDynamicWorld || start != lastDynamicStartWorld || end != lastDynamicEndWorld)
             {
                 cacheDirty = true;
+                if (pathMode == VFXSplinePathMode.Bezier)
+                    RefreshAllAutoSmoothBezierPoints();
                 lastDynamicStartWorld = start;
                 lastDynamicEndWorld = end;
                 hasLastDynamicWorld = true;
@@ -417,6 +509,14 @@ namespace VFXTimelineSplineTool
                     (-p0 + 3f * p1 - 3f * p2 + p3) * t3);
         }
 
+        private static Vector3 CubicBezier(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float t)
+        {
+            float u = 1f - t;
+            float tt = t * t;
+            float uu = u * u;
+            return uu * u * p0 + 3f * uu * t * p1 + 3f * u * tt * p2 + tt * t * p3;
+        }
+
         public void ResetPath()
         {
             localPoints = new List<Vector3>()
@@ -426,66 +526,425 @@ namespace VFXTimelineSplineTool
                 new Vector3(4f, 1f, 0f),
                 new Vector3(6f, 0f, 0f)
             };
+            ConvertCatmullRomToBezier();
             MarkDistanceCacheDirty();
         }
 
         public void AddPoint()
         {
-            if (localPoints == null) localPoints = new List<Vector3>();
-            Vector3 newPoint = localPoints.Count > 0 ? localPoints[localPoints.Count - 1] + Vector3.right : Vector3.zero;
-            localPoints.Add(newPoint);
+            if (pathMode == VFXSplinePathMode.Bezier)
+            {
+                EnsureBezierPoints();
+                Vector3 newPoint = bezierPoints.Count > 0 ? bezierPoints[bezierPoints.Count - 1].position + Vector3.right : Vector3.zero;
+                bezierPoints.Add(CreateBezierPointForBezierList(newPoint, bezierPoints.Count));
+                RefreshAllAutoSmoothBezierPoints();
+            }
+            else
+            {
+                EnsureLocalPoints();
+                Vector3 newPoint = localPoints.Count > 0 ? localPoints[localPoints.Count - 1] + Vector3.right : Vector3.zero;
+                localPoints.Add(newPoint);
+            }
             MarkDistanceCacheDirty();
         }
 
         public void InsertPoint(int index)
         {
-            if (localPoints == null) localPoints = new List<Vector3>();
-            index = Mathf.Clamp(index, 0, localPoints.Count);
-            Vector3 p;
-            if (localPoints.Count == 0) p = Vector3.zero;
-            else if (index <= 0) p = localPoints[0] - Vector3.right;
-            else if (index >= localPoints.Count) p = localPoints[localPoints.Count - 1] + Vector3.right;
-            else p = (localPoints[index - 1] + localPoints[index]) * 0.5f;
-            localPoints.Insert(index, p);
+            if (pathMode == VFXSplinePathMode.Bezier)
+            {
+                EnsureBezierPoints();
+                index = Mathf.Clamp(index, 0, bezierPoints.Count);
+                Vector3 p;
+                if (bezierPoints.Count == 0) p = Vector3.zero;
+                else if (index <= 0) p = bezierPoints[0].position - Vector3.right;
+                else if (index >= bezierPoints.Count) p = bezierPoints[bezierPoints.Count - 1].position + Vector3.right;
+                else p = (bezierPoints[index - 1].position + bezierPoints[index].position) * 0.5f;
+                bezierPoints.Insert(index, CreateBezierPointForBezierList(p, index));
+                RefreshAllAutoSmoothBezierPoints();
+            }
+            else
+            {
+                EnsureLocalPoints();
+                index = Mathf.Clamp(index, 0, localPoints.Count);
+                Vector3 p;
+                if (localPoints.Count == 0) p = Vector3.zero;
+                else if (index <= 0) p = localPoints[0] - Vector3.right;
+                else if (index >= localPoints.Count) p = localPoints[localPoints.Count - 1] + Vector3.right;
+                else p = (localPoints[index - 1] + localPoints[index]) * 0.5f;
+                localPoints.Insert(index, p);
+            }
             MarkDistanceCacheDirty();
         }
 
         public void RemovePointAt(int index)
         {
-            if (localPoints == null || localPoints.Count <= 2) return;
-            if (index < 0 || index >= localPoints.Count) return;
-            localPoints.RemoveAt(index);
+            if (pathMode == VFXSplinePathMode.Bezier)
+            {
+                if (bezierPoints == null || bezierPoints.Count <= 2) return;
+                if (index < 0 || index >= bezierPoints.Count) return;
+                bezierPoints.RemoveAt(index);
+                RefreshAllAutoSmoothBezierPoints();
+            }
+            else
+            {
+                if (localPoints == null || localPoints.Count <= 2) return;
+                if (index < 0 || index >= localPoints.Count) return;
+                localPoints.RemoveAt(index);
+            }
             MarkDistanceCacheDirty();
         }
 
         public void RemoveLastPoint()
         {
-            RemovePointAt(localPoints.Count - 1);
+            RemovePointAt(GetActivePointCount() - 1);
         }
 
         public void ReversePath()
         {
-            if (localPoints == null) return;
-            localPoints.Reverse();
+            if (pathMode == VFXSplinePathMode.Bezier)
+            {
+                if (bezierPoints == null) return;
+                bezierPoints.Reverse();
+                for (int i = 0; i < bezierPoints.Count; i++)
+                {
+                    VFXBezierPoint point = bezierPoints[i];
+                    if (point == null) continue;
+                    Vector3 oldIn = point.inTangent;
+                    point.inTangent = point.outTangent;
+                    point.outTangent = oldIn;
+                }
+                RefreshAllAutoSmoothBezierPoints();
+            }
+            else
+            {
+                if (localPoints == null) return;
+                localPoints.Reverse();
+            }
             MarkDistanceCacheDirty();
         }
 
         public void FlattenY()
         {
-            if (localPoints == null) return;
-            for (int i = 0; i < localPoints.Count; i++)
-                localPoints[i] = new Vector3(localPoints[i].x, 0f, localPoints[i].z);
+            if (pathMode == VFXSplinePathMode.Bezier)
+            {
+                if (bezierPoints == null) return;
+                for (int i = 0; i < bezierPoints.Count; i++)
+                {
+                    VFXBezierPoint point = bezierPoints[i];
+                    if (point == null) continue;
+                    point.position = new Vector3(point.position.x, 0f, point.position.z);
+                    point.inTangent = new Vector3(point.inTangent.x, 0f, point.inTangent.z);
+                    point.outTangent = new Vector3(point.outTangent.x, 0f, point.outTangent.z);
+                }
+            }
+            else
+            {
+                if (localPoints == null) return;
+                for (int i = 0; i < localPoints.Count; i++)
+                    localPoints[i] = new Vector3(localPoints[i].x, 0f, localPoints[i].z);
+            }
             MarkDistanceCacheDirty();
         }
 
         public void CenterPathToObject()
         {
+            if (pathMode == VFXSplinePathMode.Bezier)
+            {
+                if (bezierPoints == null || bezierPoints.Count == 0) return;
+                Vector3 bezierCenter = Vector3.zero;
+                for (int i = 0; i < bezierPoints.Count; i++)
+                    bezierCenter += bezierPoints[i] != null ? bezierPoints[i].position : Vector3.zero;
+                bezierCenter /= bezierPoints.Count;
+                for (int i = 0; i < bezierPoints.Count; i++)
+                {
+                    if (bezierPoints[i] != null)
+                        bezierPoints[i].position -= bezierCenter;
+                }
+                MarkDistanceCacheDirty();
+                return;
+            }
+
             if (localPoints == null || localPoints.Count == 0) return;
-            Vector3 center = Vector3.zero;
-            for (int i = 0; i < localPoints.Count; i++) center += localPoints[i];
-            center /= localPoints.Count;
-            for (int i = 0; i < localPoints.Count; i++) localPoints[i] -= center;
+            Vector3 catmullCenter = Vector3.zero;
+            for (int i = 0; i < localPoints.Count; i++) catmullCenter += localPoints[i];
+            catmullCenter /= localPoints.Count;
+            for (int i = 0; i < localPoints.Count; i++) localPoints[i] -= catmullCenter;
             MarkDistanceCacheDirty();
+        }
+
+        public int GetActivePointCount()
+        {
+            if (pathMode == VFXSplinePathMode.Bezier)
+                return bezierPoints != null ? bezierPoints.Count : 0;
+
+            return localPoints != null ? localPoints.Count : 0;
+        }
+
+        public void SetActivePointWorldPosition(int index, Vector3 worldPosition)
+        {
+            if (pathMode == VFXSplinePathMode.Bezier)
+            {
+                EnsureBezierPoints();
+                if (index < 0 || index >= bezierPoints.Count || bezierPoints[index] == null) return;
+                bezierPoints[index].position = transform.InverseTransformPoint(worldPosition);
+                RefreshAutoSmoothAround(index);
+            }
+            else
+            {
+                EnsureLocalPoints();
+                if (index < 0 || index >= localPoints.Count) return;
+                localPoints[index] = transform.InverseTransformPoint(worldPosition);
+            }
+            MarkDistanceCacheDirty();
+        }
+
+        public void SetBezierInTangentWorldPosition(int index, Vector3 worldPosition)
+        {
+            SetBezierTangentWorldPosition(index, worldPosition, true);
+        }
+
+        public void SetBezierOutTangentWorldPosition(int index, Vector3 worldPosition)
+        {
+            SetBezierTangentWorldPosition(index, worldPosition, false);
+        }
+
+        public void SetBezierHandleMode(int index, VFXBezierHandleMode mode)
+        {
+            EnsureBezierPoints();
+            if (index < 0 || index >= bezierPoints.Count || bezierPoints[index] == null) return;
+
+            VFXBezierPoint point = bezierPoints[index];
+            point.handleMode = mode;
+            if (mode == VFXBezierHandleMode.AutoSmooth)
+                ApplyAutoSmoothBezierPoint(index);
+            else if (mode != VFXBezierHandleMode.Free)
+                ApplyBezierHandleMode(point, false);
+
+            MarkDistanceCacheDirty();
+        }
+
+        public void AutoSmoothAllBezierPoints()
+        {
+            EnsureBezierPoints();
+            for (int i = 0; i < bezierPoints.Count; i++)
+            {
+                if (bezierPoints[i] == null) continue;
+                bezierPoints[i].handleMode = VFXBezierHandleMode.AutoSmooth;
+                ApplyAutoSmoothBezierPoint(i);
+            }
+
+            MarkDistanceCacheDirty();
+        }
+
+        public Vector3 GetBezierInTangentWorldPosition(int index)
+        {
+            if (bezierPoints == null || index < 0 || index >= bezierPoints.Count || bezierPoints[index] == null)
+                return transform.position;
+
+            return transform.TransformPoint(GetEffectiveBezierPosition(index) + bezierPoints[index].inTangent);
+        }
+
+        public Vector3 GetBezierOutTangentWorldPosition(int index)
+        {
+            if (bezierPoints == null || index < 0 || index >= bezierPoints.Count || bezierPoints[index] == null)
+                return transform.position;
+
+            return transform.TransformPoint(GetEffectiveBezierPosition(index) + bezierPoints[index].outTangent);
+        }
+
+        private void SetBezierTangentWorldPosition(int index, Vector3 worldPosition, bool isInTangent)
+        {
+            EnsureBezierPoints();
+            if (index < 0 || index >= bezierPoints.Count || bezierPoints[index] == null) return;
+
+            VFXBezierPoint point = bezierPoints[index];
+            if (point.handleMode == VFXBezierHandleMode.AutoSmooth)
+                point.handleMode = VFXBezierHandleMode.Free;
+
+            Vector3 localHandle = transform.InverseTransformPoint(worldPosition);
+            Vector3 localTangent = localHandle - GetEffectiveBezierPosition(index);
+            if (isInTangent)
+                point.inTangent = localTangent;
+            else
+                point.outTangent = localTangent;
+
+            ApplyBezierHandleMode(point, isInTangent);
+            MarkDistanceCacheDirty();
+        }
+
+        private static void ApplyBezierHandleMode(VFXBezierPoint point, bool changedInTangent)
+        {
+            if (point == null || point.handleMode == VFXBezierHandleMode.Free || point.handleMode == VFXBezierHandleMode.AutoSmooth)
+                return;
+
+            Vector3 changed = changedInTangent ? point.inTangent : point.outTangent;
+            if (changed.sqrMagnitude < 0.000001f)
+                return;
+
+            Vector3 other = changedInTangent ? point.outTangent : point.inTangent;
+            float otherLength = point.handleMode == VFXBezierHandleMode.Mirrored ? changed.magnitude : Mathf.Max(0.0001f, other.magnitude);
+            Vector3 mirrored = -changed.normalized * otherLength;
+
+            if (changedInTangent)
+                point.outTangent = mirrored;
+            else
+                point.inTangent = mirrored;
+        }
+
+        private void RefreshAutoSmoothAround(int index)
+        {
+            ApplyAutoSmoothBezierPoint(index - 1);
+            ApplyAutoSmoothBezierPoint(index);
+            ApplyAutoSmoothBezierPoint(index + 1);
+        }
+
+        private void RefreshAllAutoSmoothBezierPoints()
+        {
+            if (bezierPoints == null)
+                return;
+
+            for (int i = 0; i < bezierPoints.Count; i++)
+                ApplyAutoSmoothBezierPoint(i);
+        }
+
+        private void ApplyAutoSmoothBezierPoint(int index)
+        {
+            if (bezierPoints == null || index < 0 || index >= bezierPoints.Count)
+                return;
+
+            VFXBezierPoint point = bezierPoints[index];
+            if (point == null || point.handleMode != VFXBezierHandleMode.AutoSmooth)
+                return;
+
+            int count = bezierPoints.Count;
+            if (count < 2)
+                return;
+
+            Vector3 position = GetEffectiveBezierPosition(index);
+            Vector3 tangent;
+
+            if (index <= 0)
+            {
+                Vector3 next = bezierPoints[1] != null ? GetEffectiveBezierPosition(1) : position + Vector3.right;
+                tangent = (next - position) / 3f;
+            }
+            else if (index >= count - 1)
+            {
+                Vector3 prev = bezierPoints[count - 2] != null ? GetEffectiveBezierPosition(count - 2) : position - Vector3.right;
+                tangent = (position - prev) / 3f;
+            }
+            else
+            {
+                Vector3 prev = bezierPoints[index - 1] != null ? GetEffectiveBezierPosition(index - 1) : position - Vector3.right;
+                Vector3 next = bezierPoints[index + 1] != null ? GetEffectiveBezierPosition(index + 1) : position + Vector3.right;
+                tangent = (next - prev) / 6f;
+            }
+
+            if (tangent.sqrMagnitude < 0.000001f)
+                tangent = Vector3.right * 0.5f;
+
+            point.inTangent = -tangent;
+            point.outTangent = tangent;
+        }
+
+        public void ConvertCatmullRomToBezier()
+        {
+            EnsureLocalPoints();
+            bezierPoints = new List<VFXBezierPoint>();
+            for (int i = 0; i < localPoints.Count; i++)
+                bezierPoints.Add(CreateBezierPoint(localPoints[i], i));
+            MarkDistanceCacheDirty();
+        }
+
+        public void ConvertBezierToCatmullRom()
+        {
+            EnsureBezierPoints();
+            localPoints = new List<Vector3>();
+            for (int i = 0; i < bezierPoints.Count; i++)
+                localPoints.Add(bezierPoints[i] != null ? bezierPoints[i].position : Vector3.zero);
+            MarkDistanceCacheDirty();
+        }
+
+        private void EnsureLocalPoints()
+        {
+            if (localPoints == null) localPoints = new List<Vector3>();
+            if (localPoints.Count < 2)
+            {
+                while (localPoints.Count < 2)
+                    localPoints.Add(Vector3.right * localPoints.Count);
+            }
+        }
+
+        private void EnsureBezierPoints()
+        {
+            if (bezierPoints == null)
+                bezierPoints = new List<VFXBezierPoint>();
+
+            if (bezierPoints.Count < 2)
+            {
+                EnsureLocalPoints();
+                ConvertCatmullRomToBezier();
+            }
+
+            for (int i = 0; i < bezierPoints.Count; i++)
+            {
+                if (bezierPoints[i] == null)
+                    bezierPoints[i] = CreateBezierPoint(Vector3.right * i, i);
+            }
+        }
+
+        private VFXBezierPoint CreateBezierPoint(Vector3 position, int index)
+        {
+            VFXBezierPoint point = new VFXBezierPoint(position);
+            Vector3 tangent = EstimateBezierTangent(index, position);
+            point.inTangent = -tangent;
+            point.outTangent = tangent;
+            point.handleMode = VFXBezierHandleMode.Aligned;
+            return point;
+        }
+
+        private VFXBezierPoint CreateBezierPointForBezierList(Vector3 position, int index)
+        {
+            VFXBezierPoint point = new VFXBezierPoint(position);
+            Vector3 tangent = Vector3.right * 0.5f;
+
+            if (bezierPoints != null && bezierPoints.Count > 0)
+            {
+                if (index <= 0)
+                    tangent = (bezierPoints[0].position - position) / 3f;
+                else if (index >= bezierPoints.Count)
+                    tangent = (position - bezierPoints[bezierPoints.Count - 1].position) / 3f;
+                else
+                    tangent = (bezierPoints[index].position - bezierPoints[index - 1].position) / 6f;
+            }
+
+            if (tangent.sqrMagnitude < 0.000001f)
+                tangent = Vector3.right * 0.5f;
+
+            point.inTangent = -tangent;
+            point.outTangent = tangent;
+            point.handleMode = VFXBezierHandleMode.Aligned;
+            return point;
+        }
+
+        private Vector3 EstimateBezierTangent(int index, Vector3 position)
+        {
+            List<Vector3> source = localPoints;
+            if (source == null || source.Count < 2)
+                return Vector3.right * 0.5f;
+
+            int prevIndex = Mathf.Clamp(index - 1, 0, source.Count - 1);
+            int nextIndex = Mathf.Clamp(index + 1, 0, source.Count - 1);
+            Vector3 prev = source[prevIndex];
+            Vector3 next = source[nextIndex];
+
+            if (index <= 0)
+                return (next - position) / 3f;
+
+            if (index >= source.Count - 1)
+                return (position - prev) / 3f;
+
+            return (next - prev) / 6f;
         }
 
         public void AddEvent()

@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8729726f2aef1564f81c6f11d2e662a0, type: 3}
+  m_Name: MySplinePath_01
+  m_EditorClassIdentifier: 
+  presetName: MySplinePath_01
+  pathMode: 1
+  localPoints:
+  - {x: 0, y: 0, z: 0}
+  - {x: 2.5412393, y: 1.5600019, z: -1.1529942}
+  - {x: 4, y: 0.071876705, z: 0.897775}
+  - {x: 6, y: 0, z: 0}
+  bezierPoints:
+  - position: {x: 0, y: 0, z: 0}
+    inTangent: {x: -0.6666667, y: -0.33333334, z: -0}
+    outTangent: {x: 0.6666667, y: 0.33333334, z: 0}
+    handleMode: 1
+  - position: {x: 2.5412393, y: 1.5600019, z: -1.1529942}
+    inTangent: {x: -1.2384028, y: 0.80434483, z: 0.43608016}
+    outTangent: {x: 2.2771735, y: -1.4790282, z: -0.8018637}
+    handleMode: 1
+  - position: {x: 4, y: 0.071876705, z: 0.897775}
+    inTangent: {x: -0.42631823, y: 0.68121344, z: -1.1010948}
+    outTangent: {x: 0.35014486, y: -0.5594961, z: 0.9043543}
+    handleMode: 1
+  - position: {x: 6, y: 0, z: 0}
+    inTangent: {x: -0.6666667, y: 0.33333334, z: -0}
+    outTangent: {x: 0.6666667, y: -0.33333334, z: 0}
+    handleMode: 1
+  saveDisplaySettings: 0
+  pathColor: {r: 1, g: 0.68, b: 0.02, a: 1}
+  progressMarkColor: {r: 0.1, g: 0.72, b: 1, a: 1}
+  lineWidth: 3
+  pointSize: 0.15
+  resolution: 48
+  distanceSampleResolution: 256

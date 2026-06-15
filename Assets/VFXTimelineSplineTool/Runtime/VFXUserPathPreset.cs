@@ -10,7 +10,9 @@ namespace VFXTimelineSplineTool
     public class VFXUserPathPreset : ScriptableObject
     {
         public string presetName = "New Path Preset";
+        public VFXSplinePathMode pathMode = VFXSplinePathMode.CatmullRom;
         public List<Vector3> localPoints = new List<Vector3>();
+        public List<VFXBezierPoint> bezierPoints = new List<VFXBezierPoint>();
 
         [Header("Optional Display Settings")]
         public bool saveDisplaySettings = false;
@@ -26,7 +28,19 @@ namespace VFXTimelineSplineTool
             if (spline == null) return;
 
             presetName = string.IsNullOrEmpty(displayName) ? spline.name : displayName;
-            localPoints = spline.localPoints != null ? new List<Vector3>(spline.localPoints) : new List<Vector3>();
+            pathMode = spline.pathMode;
+            if (spline.pathMode == VFXSplinePathMode.Bezier && spline.bezierPoints != null)
+            {
+                localPoints = new List<Vector3>();
+                for (int i = 0; i < spline.bezierPoints.Count; i++)
+                    localPoints.Add(spline.bezierPoints[i] != null ? spline.bezierPoints[i].position : Vector3.zero);
+            }
+            else
+            {
+                localPoints = spline.localPoints != null ? new List<Vector3>(spline.localPoints) : new List<Vector3>();
+            }
+
+            bezierPoints = CloneBezierPoints(spline.bezierPoints);
 
             saveDisplaySettings = includeDisplaySettings;
             if (includeDisplaySettings)
@@ -44,6 +58,7 @@ namespace VFXTimelineSplineTool
         {
             if (spline == null) return;
 
+            spline.pathMode = pathMode;
             spline.localPoints = localPoints != null ? new List<Vector3>(localPoints) : new List<Vector3>();
             if (spline.localPoints.Count < 2)
             {
@@ -51,6 +66,10 @@ namespace VFXTimelineSplineTool
                 spline.localPoints.Add(Vector3.zero);
                 spline.localPoints.Add(Vector3.right);
             }
+
+            spline.bezierPoints = CloneBezierPoints(bezierPoints);
+            if (spline.pathMode == VFXSplinePathMode.Bezier && (spline.bezierPoints == null || spline.bezierPoints.Count < 2))
+                spline.ConvertCatmullRomToBezier();
 
             if (saveDisplaySettings)
             {
@@ -63,6 +82,33 @@ namespace VFXTimelineSplineTool
             }
 
             spline.MarkDistanceCacheDirty();
+        }
+
+        private static List<VFXBezierPoint> CloneBezierPoints(List<VFXBezierPoint> source)
+        {
+            List<VFXBezierPoint> result = new List<VFXBezierPoint>();
+            if (source == null)
+                return result;
+
+            for (int i = 0; i < source.Count; i++)
+            {
+                VFXBezierPoint p = source[i];
+                if (p == null)
+                {
+                    result.Add(new VFXBezierPoint(Vector3.right * i));
+                    continue;
+                }
+
+                result.Add(new VFXBezierPoint()
+                {
+                    position = p.position,
+                    inTangent = p.inTangent,
+                    outTangent = p.outTangent,
+                    handleMode = p.handleMode
+                });
+            }
+
+            return result;
         }
     }
 }

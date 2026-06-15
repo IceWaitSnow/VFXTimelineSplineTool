@@ -221,6 +221,7 @@ namespace VFXTimelineSplineTool.EditorTools
             public double timelineDuration;
             public double clipIn;
             public string trackName;
+            public bool isInfiniteClip;
         }
 
         private struct BakeSample
@@ -396,7 +397,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 return normalizedTime;
 
             float sourceLength = Mathf.Max(0.0001f, source.clip.length);
-            float sourceTime = Mathf.Clamp01(normalizedTime) * sourceLength + (float)source.clipIn;
+            float sourceTime = source.isInfiniteClip ? bakeTime : Mathf.Clamp01(normalizedTime) * sourceLength + (float)source.clipIn;
             sourceTime = Mathf.Clamp(sourceTime, 0f, sourceLength);
             return progressCurve.Evaluate(sourceTime);
         }
@@ -444,6 +445,26 @@ namespace VFXTimelineSplineTool.EditorTools
                     if (!IsTimelineBindingMatch(binding, targetAnimator, targetGameObject, targetTransform))
                         continue;
 
+                    if (!animationTrack.inClipMode && animationTrack.infiniteClip != null)
+                    {
+                        AnimationCurve infiniteProgressCurve = FindProgressCurve(animationTrack.infiniteClip);
+                        if (infiniteProgressCurve != null)
+                        {
+                            float clipLength = Mathf.Max(0.01f, animationTrack.infiniteClip.length);
+
+                            result.director = director;
+                            result.clip = animationTrack.infiniteClip;
+                            result.timelineStart = 0.0;
+                            result.timelineDuration = clipLength;
+                            result.timelineEnd = clipLength;
+                            result.clipIn = 0.0;
+                            result.trackName = animationTrack.name + " (Infinite Clip)";
+                            result.isInfiniteClip = true;
+                            message = "已找到 Timeline Infinite Progress Clip。";
+                            return true;
+                        }
+                    }
+
                     foreach (TimelineClip timelineClip in animationTrack.GetClips())
                     {
                         AnimationPlayableAsset playableAsset = timelineClip.asset as AnimationPlayableAsset;
@@ -461,6 +482,7 @@ namespace VFXTimelineSplineTool.EditorTools
                         result.timelineEnd = timelineClip.end;
                         result.clipIn = timelineClip.clipIn;
                         result.trackName = animationTrack.name;
+                        result.isInfiniteClip = false;
                         message = "已找到 Timeline Progress Clip。";
                         return true;
                     }

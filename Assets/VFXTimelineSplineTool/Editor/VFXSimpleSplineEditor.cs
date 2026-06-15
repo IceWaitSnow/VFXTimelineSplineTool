@@ -61,6 +61,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
             serializedObject.Update();
 
+            DrawProperty("pathMode", "Path Mode");
             DrawProperty("pathColor", "Path Color");
             DrawProperty("progressMarkColor", "Progress Mark Color");
             DrawProperty("lineWidth", "Line Width");
@@ -112,7 +113,32 @@ namespace VFXTimelineSplineTool.EditorTools
             DrawProperty("distanceSampleResolution", "Distance Sample Resolution");
 
             EditorGUILayout.Space(8);
-            DrawProperty("localPoints", "Local Points", true);
+            EditorGUILayout.LabelField("Path Data", EditorStyles.boldLabel);
+            if (spline.pathMode == VFXSplinePathMode.Bezier)
+            {
+                DrawProperty("bezierPoints", "Bezier Points", true);
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("Convert Catmull-Rom To Bezier"))
+                        ModifySpline(spline, "Convert Catmull-Rom To Bezier", () => spline.ConvertCatmullRomToBezier());
+
+                    if (GUILayout.Button("Copy Bezier Points To Catmull-Rom"))
+                        ModifySpline(spline, "Copy Bezier Points To Catmull-Rom", () => spline.ConvertBezierToCatmullRom());
+                }
+            }
+            else
+            {
+                DrawProperty("localPoints", "Local Points", true);
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("Convert Current Points To Bezier"))
+                        ModifySpline(spline, "Convert Current Points To Bezier", () =>
+                        {
+                            spline.ConvertCatmullRomToBezier();
+                            spline.pathMode = VFXSplinePathMode.Bezier;
+                        });
+                }
+            }
 
             serializedObject.ApplyModifiedProperties();
 
@@ -131,7 +157,7 @@ namespace VFXTimelineSplineTool.EditorTools
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("Add Point")) ModifySpline(spline, "Add Point", () => spline.AddPoint());
-                if (GUILayout.Button("Insert Point")) ModifySpline(spline, "Insert Point", () => spline.InsertPoint(Mathf.Max(1, spline.localPoints.Count - 1)));
+                if (GUILayout.Button("Insert Point")) ModifySpline(spline, "Insert Point", () => spline.InsertPoint(Mathf.Max(1, spline.GetActivePointCount() - 1)));
                 if (GUILayout.Button("Remove Last Point")) ModifySpline(spline, "Remove Last Point", () => spline.RemoveLastPoint());
             }
             using (new EditorGUILayout.HorizontalScope())
@@ -216,6 +242,8 @@ namespace VFXTimelineSplineTool.EditorTools
             ModifySpline(spline, undoName, () =>
             {
                 spline.localPoints = GeneratePresetPoints(selectedShapePreset);
+                if (spline.pathMode == VFXSplinePathMode.Bezier)
+                    spline.ConvertCatmullRomToBezier();
                 spline.MarkDistanceCacheDirty();
             });
         }
@@ -607,9 +635,12 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("Point Tools", EditorStyles.boldLabel);
-            if (spline.localPoints == null) return;
+            int pointCount = spline.GetActivePointCount();
+            if (pointCount <= 0) return;
 
-            for (int i = 0; i < spline.localPoints.Count; i++)
+            DrawSelectedBezierPointTools(spline, pointCount);
+
+            for (int i = 0; i < pointCount; i++)
             {
                 using (new EditorGUILayout.HorizontalScope())
                 {
@@ -620,7 +651,7 @@ namespace VFXTimelineSplineTool.EditorTools
                         ModifySpline(spline, "Insert Point After", () => spline.InsertPoint(index));
                         break;
                     }
-                    EditorGUI.BeginDisabledGroup(spline.localPoints.Count <= 2);
+                    EditorGUI.BeginDisabledGroup(pointCount <= 2);
                     if (GUILayout.Button("Delete"))
                     {
                         int index = i;
@@ -630,6 +661,62 @@ namespace VFXTimelineSplineTool.EditorTools
                     EditorGUI.EndDisabledGroup();
                 }
             }
+        }
+
+        private static void DrawSelectedBezierPointTools(VFXSimpleSpline spline, int pointCount)
+        {
+            if (spline.pathMode != VFXSplinePathMode.Bezier || spline.bezierPoints == null || spline.bezierPoints.Count == 0)
+                return;
+
+            int selected = Mathf.Clamp(spline.selectedPointIndex, 0, pointCount - 1);
+            if (selected < 0 || selected >= spline.bezierPoints.Count || spline.bezierPoints[selected] == null)
+                return;
+
+            VFXBezierPoint point = spline.bezierPoints[selected];
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("Selected Bezier Point " + selected, EditorStyles.boldLabel);
+
+            EditorGUI.BeginChangeCheck();
+            VFXBezierHandleMode mode = (VFXBezierHandleMode)EditorGUILayout.EnumPopup("Handle Mode", point.handleMode);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(spline, "Change Bezier Handle Mode");
+                spline.SetBezierHandleMode(selected, mode);
+                EditorUtility.SetDirty(spline);
+                SceneView.RepaintAll();
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Free Handles"))
+                    SetSelectedBezierHandleMode(spline, selected, VFXBezierHandleMode.Free);
+
+                if (GUILayout.Button("Aligned"))
+                    SetSelectedBezierHandleMode(spline, selected, VFXBezierHandleMode.Aligned);
+
+                if (GUILayout.Button("Mirrored"))
+                    SetSelectedBezierHandleMode(spline, selected, VFXBezierHandleMode.Mirrored);
+
+                if (GUILayout.Button("Auto Smooth"))
+                    SetSelectedBezierHandleMode(spline, selected, VFXBezierHandleMode.AutoSmooth);
+            }
+
+            if (GUILayout.Button("Auto Smooth All Bezier Points"))
+            {
+                Undo.RecordObject(spline, "Auto Smooth All Bezier Points");
+                spline.AutoSmoothAllBezierPoints();
+                EditorUtility.SetDirty(spline);
+                SceneView.RepaintAll();
+            }
+        }
+
+        private static void SetSelectedBezierHandleMode(VFXSimpleSpline spline, int selected, VFXBezierHandleMode mode)
+        {
+            Undo.RecordObject(spline, "Change Bezier Handle Mode");
+            spline.SetBezierHandleMode(selected, mode);
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
         }
 
         private void OnSceneGUI()
@@ -665,7 +752,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
         public static void DrawSpline(VFXSimpleSpline spline, bool selected)
         {
-            if (spline == null || spline.localPoints == null || spline.localPoints.Count < 2) return;
+            if (spline == null || spline.GetActivePointCount() < 2) return;
 
             int steps = Mathf.Max(8, spline.resolution);
             Vector3[] points = new Vector3[steps + 1];
@@ -714,9 +801,9 @@ namespace VFXTimelineSplineTool.EditorTools
 
         public static void DrawEditablePoints(VFXSimpleSpline spline)
         {
-            if (spline == null || spline.localPoints == null) return;
+            if (spline == null) return;
 
-            int count = spline.localPoints.Count;
+            int count = spline.GetActivePointCount();
             if (count == 0) return;
 
             if (spline.selectedPointIndex < 0 || spline.selectedPointIndex >= count)
@@ -728,9 +815,13 @@ namespace VFXTimelineSplineTool.EditorTools
                 bool isDynamicBoundPoint = spline.IsPointDynamicallyBound(i);
                 Transform boundTransform = spline.GetDynamicBindingTransformForPoint(i);
                 float size = HandleUtility.GetHandleSize(world) * spline.pointSize;
-                bool isSelectedPoint = spline.showAllPointHandles || spline.selectedPointIndex == i;
+                bool isPrimarySelectedPoint = spline.selectedPointIndex == i;
+                bool isSelectedPoint = spline.showAllPointHandles || isPrimarySelectedPoint;
 
                 Handles.color = isDynamicBoundPoint ? new Color(0.2f, 1f, 0.35f, 1f) : (isSelectedPoint ? Color.yellow : spline.pathColor);
+
+                if (spline.pathMode == VFXSplinePathMode.Bezier)
+                    HandleBezierPointContextMenu(spline, i, world, size);
 
                 // 未选中的控制点只显示小球；点击小球后，才显示该点的 Position Handle。
                 if (Handles.Button(world, Quaternion.identity, size, size * 1.25f, Handles.SphereHandleCap))
@@ -754,6 +845,13 @@ namespace VFXTimelineSplineTool.EditorTools
                 if (!isSelectedPoint)
                     continue;
 
+                if (spline.pathMode == VFXSplinePathMode.Bezier)
+                {
+                    DrawBezierHandles(spline, i, count, world, size);
+                    if (isPrimarySelectedPoint)
+                        DrawBezierHandleModeToolbar(spline, i, world, size);
+                }
+
                 EditorGUI.BeginChangeCheck();
                 Vector3 newWorld = Handles.PositionHandle(world, Quaternion.identity);
                 if (EditorGUI.EndChangeCheck())
@@ -767,13 +865,147 @@ namespace VFXTimelineSplineTool.EditorTools
                     else
                     {
                         Undo.RecordObject(spline, "Move Spline Point");
-                        spline.localPoints[i] = spline.transform.InverseTransformPoint(newWorld);
+                        spline.SetActivePointWorldPosition(i, newWorld);
                         EditorUtility.SetDirty(spline);
                     }
 
                     spline.MarkDistanceCacheDirty();
                     SceneView.RepaintAll();
                 }
+            }
+        }
+
+        private static void HandleBezierPointContextMenu(VFXSimpleSpline spline, int index, Vector3 pointWorld, float pointSize)
+        {
+            Event e = Event.current;
+            if (e == null || e.type != EventType.MouseDown || e.button != 1)
+                return;
+
+            Vector2 pointGui = HandleUtility.WorldToGUIPoint(pointWorld);
+            float radius = Mathf.Max(18f, pointSize * 90f);
+            if (Vector2.Distance(e.mousePosition, pointGui) > radius)
+                return;
+
+            Undo.RecordObject(spline, "Select Spline Point");
+            spline.selectedPointIndex = index;
+            EditorUtility.SetDirty(spline);
+
+            GenericMenu menu = new GenericMenu();
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Free, "Handle Mode/Free Handles");
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Aligned, "Handle Mode/Aligned");
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Mirrored, "Handle Mode/Mirrored");
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.AutoSmooth, "Handle Mode/Auto Smooth");
+            menu.AddSeparator("");
+            menu.AddItem(new GUIContent("Auto Smooth All"), false, () =>
+            {
+                Undo.RecordObject(spline, "Auto Smooth All Bezier Points");
+                spline.AutoSmoothAllBezierPoints();
+                EditorUtility.SetDirty(spline);
+                SceneView.RepaintAll();
+            });
+            e.Use();
+            menu.ShowAsContext();
+        }
+
+        private static void AddBezierModeMenuItem(GenericMenu menu, VFXSimpleSpline spline, int index, VFXBezierHandleMode mode, string label)
+        {
+            bool current = spline.bezierPoints != null &&
+                           index >= 0 &&
+                           index < spline.bezierPoints.Count &&
+                           spline.bezierPoints[index] != null &&
+                           spline.bezierPoints[index].handleMode == mode;
+
+            menu.AddItem(new GUIContent(label), current, () => ApplyBezierHandleMode(spline, index, mode));
+        }
+
+        private static void DrawBezierHandleModeToolbar(VFXSimpleSpline spline, int index, Vector3 pointWorld, float pointSize)
+        {
+            if (spline.bezierPoints == null || index < 0 || index >= spline.bezierPoints.Count || spline.bezierPoints[index] == null)
+                return;
+
+            Vector2 guiPoint = HandleUtility.WorldToGUIPoint(pointWorld + Vector3.up * pointSize * 2.2f);
+            Rect rect = new Rect(guiPoint.x + 12f, guiPoint.y - 18f, 228f, 22f);
+            Event e = Event.current;
+            if (e != null)
+            {
+                Vector2 pointGui = HandleUtility.WorldToGUIPoint(pointWorld);
+                float hoverRadius = Mathf.Max(42f, pointSize * 140f);
+                bool hoverPoint = Vector2.Distance(e.mousePosition, pointGui) <= hoverRadius;
+                bool hoverToolbar = rect.Contains(e.mousePosition);
+                if (!hoverPoint && !hoverToolbar)
+                    return;
+            }
+
+            Handles.BeginGUI();
+            GUILayout.BeginArea(rect, EditorStyles.toolbar);
+            GUILayout.BeginHorizontal();
+            DrawBezierModeButton(spline, index, VFXBezierHandleMode.Free, "Free");
+            DrawBezierModeButton(spline, index, VFXBezierHandleMode.Aligned, "Align");
+            DrawBezierModeButton(spline, index, VFXBezierHandleMode.Mirrored, "Mirror");
+            DrawBezierModeButton(spline, index, VFXBezierHandleMode.AutoSmooth, "Auto");
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
+            Handles.EndGUI();
+        }
+
+        private static void DrawBezierModeButton(VFXSimpleSpline spline, int index, VFXBezierHandleMode mode, string label)
+        {
+            bool selected = spline.bezierPoints[index].handleMode == mode;
+            EditorGUI.BeginDisabledGroup(selected);
+            if (GUILayout.Button(label, EditorStyles.toolbarButton, GUILayout.Width(54f)))
+            {
+                ApplyBezierHandleMode(spline, index, mode);
+                Event.current.Use();
+            }
+            EditorGUI.EndDisabledGroup();
+        }
+
+        private static void ApplyBezierHandleMode(VFXSimpleSpline spline, int index, VFXBezierHandleMode mode)
+        {
+            Undo.RecordObject(spline, "Change Bezier Handle Mode");
+            spline.SetBezierHandleMode(index, mode);
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private static void DrawBezierHandles(VFXSimpleSpline spline, int index, int pointCount, Vector3 pointWorld, float pointSize)
+        {
+            if (spline == null || spline.bezierPoints == null || index < 0 || index >= spline.bezierPoints.Count)
+                return;
+
+            VFXBezierPoint point = spline.bezierPoints[index];
+            if (point == null)
+                return;
+
+            Handles.color = new Color(0.35f, 0.85f, 1f, 0.85f);
+
+            if (index > 0)
+                DrawBezierTangentHandle(spline, index, true, pointWorld, pointSize);
+
+            if (index < pointCount - 1)
+                DrawBezierTangentHandle(spline, index, false, pointWorld, pointSize);
+        }
+
+        private static void DrawBezierTangentHandle(VFXSimpleSpline spline, int index, bool isInTangent, Vector3 pointWorld, float pointSize)
+        {
+            Vector3 handleWorld = isInTangent ? spline.GetBezierInTangentWorldPosition(index) : spline.GetBezierOutTangentWorldPosition(index);
+            Handles.color = isInTangent ? new Color(0.2f, 0.9f, 1f, 0.9f) : new Color(1f, 0.85f, 0.25f, 0.9f);
+            Handles.DrawAAPolyLine(2f, pointWorld, handleWorld);
+
+            float handleSize = Mathf.Max(pointSize * 0.75f, HandleUtility.GetHandleSize(handleWorld) * 0.06f);
+
+            EditorGUI.BeginChangeCheck();
+            Vector3 newHandleWorld = Handles.FreeMoveHandle(handleWorld, handleSize, Vector3.zero, Handles.SphereHandleCap);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(spline, isInTangent ? "Move Bezier In Tangent" : "Move Bezier Out Tangent");
+                if (isInTangent)
+                    spline.SetBezierInTangentWorldPosition(index, newHandleWorld);
+                else
+                    spline.SetBezierOutTangentWorldPosition(index, newHandleWorld);
+
+                EditorUtility.SetDirty(spline);
+                SceneView.RepaintAll();
             }
         }
 
