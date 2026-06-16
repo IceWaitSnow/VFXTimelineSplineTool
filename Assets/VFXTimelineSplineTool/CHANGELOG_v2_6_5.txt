@@ -1,0 +1,29 @@
+VFX Timeline Spline Tool - Fix v2.6.5
+
+基于 v2.6.4.1 继续增加编辑体验增强：
+
+1. 新增 VFXSplinePointEditingOverlay.cs
+   - Scene View 中为 Spline 控制点绘制“偏移选择点”。
+   - P0 会自动比普通点更大，并向 Scene 相机方向偏移，避免和 Spline 对象坐标轴重合导致点不中。
+   - 偏移点和真实顶点之间会绘制细线，不影响真实路径位置。
+   - 选中控制点后，PositionHandle 会在偏移位置显示，拖动会按 delta 移动真实顶点。
+   - 支持 Dynamic Start / End Binding：拖动首尾点时会移动绑定 Transform。
+   - 快捷键：F 聚焦当前点，Shift+A 末尾加点，Delete 删除当前点。
+
+2. 新增 VFXSplinePointListWindow.cs
+   - 菜单：Tools/VFX Timeline Spline/Point List Window。
+   - 可在窗口里查看所有控制点。
+   - 支持 Select / Focus / Insert / Delete。
+   - 支持直接编辑 Local 坐标，显示 World 坐标。
+   - 可调整偏移选择点开关、偏移强度、P0 放大开关。
+
+3. 新增 VFXSplineTimelineSourceReporterWindow.cs
+   - 菜单：Tools/VFX Timeline Spline/Timeline Source Reporter。
+   - 可手动 Refresh Timeline Source。
+   - 显示绑定当前物体的 Animation Track、Clip Count、总 Timeline Range、Duration。
+   - 对 Blend Clip 会按整条 Track 的 min(start) 到 max(end) 显示总时长。
+   - 提供 Use Found Duration 按钮，把检测到的时长写回 VFXSplineAnimator.bakeDuration。
+
+覆盖方式：
+- 把 Runtime / Editor 内文件按同路径覆盖到 Assets/VFXTimelineSplineTool/Runtime 和 Assets/VFXTimelineSplineTool/Editor。
+- 这版新增的 3 个 Editor 文件可以直接放到 Editor 文件夹。

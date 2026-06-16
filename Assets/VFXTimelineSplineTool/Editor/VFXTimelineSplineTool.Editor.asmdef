@@ -1,0 +1,19 @@
+{
+    "name": "VFXTimelineSplineTool.Editor",
+    "rootNamespace": "VFXTimelineSplineTool.EditorTools",
+    "references": [
+        "VFXTimelineSplineTool.Runtime",
+        "Unity.Timeline"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
