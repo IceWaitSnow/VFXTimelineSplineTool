@@ -137,11 +137,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 bool ok = TryFindTimelineProgressSource(animator, out found, out message);
                 if (ok)
                 {
-                    string clipInfo = found.isInfiniteClip
-                        ? "Infinite Clip：" + found.clip.name + "\nMode：" + animator.bakeTimelineInfiniteClipMode
-                        : "Timeline Clip：" + found.clip.name + "\nClip Range：" + found.timelineStart.ToString("F2") + "s - " + found.timelineEnd.ToString("F2") + "s";
-
-                    EditorGUILayout.HelpBox("已找到 Timeline Progress Clip：\n" + clipInfo + "\nTrack：" + found.trackName, MessageType.Info);
+                    EditorGUILayout.HelpBox(BuildTimelineFoundMessage(found), MessageType.Info);
                 }
                 else
                 {
@@ -246,11 +242,23 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             public PlayableDirector director;
             public AnimationClip clip;
+            public List<TimelineProgressClip> clips;
             public double timelineStart;
             public double timelineEnd;
             public double timelineDuration;
             public double clipIn;
             public string trackName;
+            public bool isInfiniteClip;
+        }
+
+        private struct TimelineProgressClip
+        {
+            public TimelineClip timelineClip;
+            public AnimationClip clip;
+            public double timelineStart;
+            public double timelineEnd;
+            public double timelineDuration;
+            public double clipIn;
             public bool isInfiniteClip;
         }
 
@@ -417,35 +425,140 @@ namespace VFXTimelineSplineTool.EditorTools
 
         private static float EvaluateProgressFromTimelineSource(VFXSplineAnimator animator, TimelineProgressSource source, float bakeTime, float normalizedTime)
         {
-            if (source.clip == null)
+            if (source.clips == null || source.clips.Count == 0)
                 return normalizedTime;
 
-            AnimationCurve progressCurve = FindProgressCurve(source.clip);
+            double timelineTime = source.timelineStart + bakeTime;
+            float weightedProgress = 0f;
+            float totalWeight = 0f;
+
+            for (int i = 0; i < source.clips.Count; i++)
+            {
+                TimelineProgressClip progressClip = source.clips[i];
+                if (progressClip.clip == null)
+                    continue;
+
+                if (timelineTime < progressClip.timelineStart || timelineTime > progressClip.timelineEnd)
+                    continue;
+
+                AnimationCurve progressCurve = FindProgressCurve(progressClip.clip);
+                if (progressCurve == null)
+                    continue;
+
+                float weight = GetTimelineClipWeight(progressClip, timelineTime);
+                if (weight <= 0.0001f)
+                    continue;
+
+                float sourceTime = GetSourceClipTime(animator, progressClip, timelineTime, bakeTime);
+                weightedProgress += progressCurve.Evaluate(sourceTime) * weight;
+                totalWeight += weight;
+            }
+
+            if (totalWeight > 0.0001f)
+                return weightedProgress / totalWeight;
+
+            return EvaluateNearestTimelineProgress(animator, source, timelineTime, normalizedTime);
+        }
+
+        private static float GetTimelineClipWeight(TimelineProgressClip progressClip, double timelineTime)
+        {
+            if (progressClip.isInfiniteClip || progressClip.timelineClip == null)
+                return 1f;
+
+            float mixIn = progressClip.timelineClip.EvaluateMixIn(timelineTime);
+            float mixOut = progressClip.timelineClip.EvaluateMixOut(timelineTime);
+            return Mathf.Clamp01(mixIn * mixOut);
+        }
+
+        private static float GetSourceClipTime(VFXSplineAnimator animator, TimelineProgressClip progressClip, double timelineTime, float bakeTime)
+        {
+            float sourceLength = Mathf.Max(0.0001f, progressClip.clip != null ? progressClip.clip.length : 0f);
+
+            if (progressClip.isInfiniteClip || progressClip.timelineClip == null)
+            {
+                if (animator != null && animator.bakeTimelineInfiniteClipMode == VFXSplineTimelineInfiniteClipBakeMode.Loop)
+                    return Mathf.Repeat(bakeTime, sourceLength);
+
+                return Mathf.Clamp(bakeTime, 0f, sourceLength);
+            }
+
+            double localTimelineTime = timelineTime - progressClip.timelineStart;
+            float sourceTime = (float)(progressClip.clipIn + localTimelineTime * progressClip.timelineClip.timeScale);
+            return Mathf.Clamp(sourceTime, 0f, sourceLength);
+        }
+
+        private static float EvaluateNearestTimelineProgress(VFXSplineAnimator animator, TimelineProgressSource source, double timelineTime, float fallback)
+        {
+            if (source.clips == null || source.clips.Count == 0)
+                return fallback;
+
+            TimelineProgressClip nearest = source.clips[0];
+            double nearestDistance = double.MaxValue;
+
+            for (int i = 0; i < source.clips.Count; i++)
+            {
+                TimelineProgressClip progressClip = source.clips[i];
+                double distance;
+                if (timelineTime < progressClip.timelineStart)
+                    distance = progressClip.timelineStart - timelineTime;
+                else if (timelineTime > progressClip.timelineEnd)
+                    distance = timelineTime - progressClip.timelineEnd;
+                else
+                    distance = 0.0;
+
+                if (distance < nearestDistance)
+                {
+                    nearest = progressClip;
+                    nearestDistance = distance;
+                }
+            }
+
+            if (nearest.clip == null)
+                return fallback;
+
+            AnimationCurve progressCurve = FindProgressCurve(nearest.clip);
             if (progressCurve == null)
-                return normalizedTime;
+                return fallback;
 
-            float sourceLength = Mathf.Max(0.0001f, source.clip.length);
-            float sourceTime;
-
-            if (source.isInfiniteClip)
-            {
-                sourceTime = animator != null && animator.bakeTimelineInfiniteClipMode == VFXSplineTimelineInfiniteClipBakeMode.Loop
-                    ? Mathf.Repeat(bakeTime, sourceLength)
-                    : Mathf.Clamp(bakeTime, 0f, sourceLength);
-            }
-            else
-            {
-                sourceTime = Mathf.Clamp01(normalizedTime) * sourceLength + (float)source.clipIn;
-                sourceTime = Mathf.Clamp(sourceTime, 0f, sourceLength);
-            }
-
+            double clampedTimelineTime = System.Math.Max(nearest.timelineStart, System.Math.Min(nearest.timelineEnd, timelineTime));
+            float sourceTime = GetSourceClipTime(animator, nearest, clampedTimelineTime, 0f);
             return progressCurve.Evaluate(sourceTime);
+        }
+
+        private static string BuildTimelineFoundMessage(TimelineProgressSource found)
+        {
+            string type = found.isInfiniteClip ? "Infinite Clip" : "Timeline Clips";
+            string modeInfo = found.isInfiniteClip ? "\nInfinite Clip Mode：" + found.trackName : "";
+            return "已找到 Timeline Progress Source：" + GetTimelineClipSummary(found) +
+                   "\nTrack：" + found.trackName +
+                   "\nType：" + type +
+                   "\nClip Count：" + GetTimelineClipCount(found) +
+                   "\nTimeline Range：" + found.timelineStart.ToString("F2") + "s - " + found.timelineEnd.ToString("F2") + "s" +
+                   "\nDuration：" + found.timelineDuration.ToString("F2") + "s" + modeInfo;
+        }
+
+        private static int GetTimelineClipCount(TimelineProgressSource source)
+        {
+            return source.clips != null ? source.clips.Count : (source.clip != null ? 1 : 0);
+        }
+
+        private static string GetTimelineClipSummary(TimelineProgressSource source)
+        {
+            if (source.clips != null && source.clips.Count > 0)
+            {
+                if (source.clips.Count == 1 && source.clips[0].clip != null)
+                    return source.clips[0].clip.name;
+
+                return source.clips.Count + " clips";
+            }
+
+            return source.clip != null ? source.clip.name : "None";
         }
 
         private static bool TryFindTimelineProgressSource(VFXSplineAnimator animator, out TimelineProgressSource result, out string message)
         {
             result = default;
-            message = "没有找到绑定到当前物体的 Timeline Animation Track，或者 Track 上的 AnimationClip 没有 VFXSplineAnimator.progress 曲线。";
+            message = "没有找到绑定到当前物体的 Timeline Animation Track，或者 Track 上的 AnimationClip / Infinite Clip 没有 VFXSplineAnimator.progress 曲线。";
             if (animator == null)
                 return false;
 
@@ -493,8 +606,20 @@ namespace VFXTimelineSplineTool.EditorTools
                         if (infiniteProgressCurve != null)
                         {
                             float clipLength = Mathf.Max(0.01f, animationTrack.infiniteClip.length);
+                            TimelineProgressClip infiniteClip = new TimelineProgressClip()
+                            {
+                                timelineClip = null,
+                                clip = animationTrack.infiniteClip,
+                                timelineStart = 0.0,
+                                timelineDuration = clipLength,
+                                timelineEnd = clipLength,
+                                clipIn = 0.0,
+                                isInfiniteClip = true
+                            };
+
                             result.director = director;
                             result.clip = animationTrack.infiniteClip;
+                            result.clips = new List<TimelineProgressClip>() { infiniteClip };
                             result.timelineStart = 0.0;
                             result.timelineDuration = clipLength;
                             result.timelineEnd = clipLength;
@@ -506,8 +631,12 @@ namespace VFXTimelineSplineTool.EditorTools
                         }
                     }
 
+                    List<TimelineProgressClip> progressClips = new List<TimelineProgressClip>();
                     foreach (TimelineClip timelineClip in animationTrack.GetClips())
                     {
+                        if (timelineClip == null)
+                            continue;
+
                         AnimationPlayableAsset playableAsset = timelineClip.asset as AnimationPlayableAsset;
                         if (playableAsset == null || playableAsset.clip == null)
                             continue;
@@ -516,17 +645,42 @@ namespace VFXTimelineSplineTool.EditorTools
                         if (progressCurve == null)
                             continue;
 
-                        result.director = director;
-                        result.clip = playableAsset.clip;
-                        result.timelineStart = timelineClip.start;
-                        result.timelineDuration = timelineClip.duration;
-                        result.timelineEnd = timelineClip.end;
-                        result.clipIn = timelineClip.clipIn;
-                        result.trackName = animationTrack.name;
-                        result.isInfiniteClip = false;
-                        message = "已找到 Timeline Progress Clip。";
-                        return true;
+                        progressClips.Add(new TimelineProgressClip()
+                        {
+                            timelineClip = timelineClip,
+                            clip = playableAsset.clip,
+                            timelineStart = timelineClip.start,
+                            timelineDuration = timelineClip.duration,
+                            timelineEnd = timelineClip.end,
+                            clipIn = timelineClip.clipIn,
+                            isInfiniteClip = false
+                        });
                     }
+
+                    if (progressClips.Count <= 0)
+                        continue;
+
+                    progressClips.Sort((a, b) => a.timelineStart.CompareTo(b.timelineStart));
+
+                    double timelineStart = progressClips[0].timelineStart;
+                    double timelineEnd = progressClips[0].timelineEnd;
+                    for (int i = 1; i < progressClips.Count; i++)
+                    {
+                        timelineStart = System.Math.Min(timelineStart, progressClips[i].timelineStart);
+                        timelineEnd = System.Math.Max(timelineEnd, progressClips[i].timelineEnd);
+                    }
+
+                    result.director = director;
+                    result.clip = progressClips[0].clip;
+                    result.clips = progressClips;
+                    result.timelineStart = timelineStart;
+                    result.timelineEnd = timelineEnd;
+                    result.timelineDuration = System.Math.Max(0.01, timelineEnd - timelineStart);
+                    result.clipIn = progressClips[0].clipIn;
+                    result.trackName = animationTrack.name;
+                    result.isInfiniteClip = false;
+                    message = "已找到 Timeline Progress Clips。";
+                    return true;
                 }
             }
 
