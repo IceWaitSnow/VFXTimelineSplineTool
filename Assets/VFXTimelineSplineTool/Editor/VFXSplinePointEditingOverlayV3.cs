@@ -25,9 +25,10 @@ namespace VFXTimelineSplineTool.EditorTools
             var spline = go.GetComponent<VFXSimpleSpline>();
             if (spline == null) return;
 
-            for (int i = 0; i < spline.localPoints.Count; i++)
+            int count = VFXSplinePointAPI.GetPointCount(spline);
+            for (int i = 0; i < count; i++)
             {
-                var w = spline.transform.TransformPoint(spline.localPoints[i]);
+                var w = VFXSplinePointAPI.GetPointWorld(spline, i);
 
                 float size = HandleUtility.GetHandleSize(w) * 0.12f;
                 float pick = size * 3f;
@@ -44,9 +45,7 @@ namespace VFXTimelineSplineTool.EditorTools
                     var nw = Handles.PositionHandle(w, Quaternion.identity);
                     if (EditorGUI.EndChangeCheck())
                     {
-                        Undo.RecordObject(spline, "Move");
-                        spline.localPoints[i] = spline.transform.InverseTransformPoint(nw);
-                        spline.MarkDistanceCacheDirty();
+                        VFXSplinePointAPI.SetPointWorld(spline, i, nw);
                     }
                 }
             }
