@@ -7,10 +7,19 @@ namespace VFXTimelineSplineTool
     [Serializable]
     public class VFXSplineAnimationBehaviour : PlayableBehaviour
     {
+        public struct EvaluationResult
+        {
+            public float progress;
+            public Vector3 position;
+            public Quaternion rotation;
+            public bool hasRotation;
+        }
+
         [NonSerialized] public VFXSimpleSpline spline;
 
         [Range(0f, 1f)] public float startProgress = 0f;
         [Range(0f, 1f)] public float endProgress = 1f;
+
         public bool useSpeedCurve = true;
         public AnimationCurve speedCurve = AnimationCurve.Linear(0f, 0f, 1f, 1f);
 
@@ -40,44 +49,48 @@ namespace VFXTimelineSplineTool
         private bool hasPrevious;
         private float previousProgress;
 
-        public VFXSplineAnimationBehaviour() { }
-
         public override void OnBehaviourPlay(Playable playable, FrameData info)
         {
             hasPrevious = false;
-            if (spline != null) spline.ResetEventFireStates();
+            if (spline != null)
+                spline.ResetEventFireStates();
         }
 
+        /// <summary>
+        /// 保留直接播放单个 Playable 时的兼容行为。
+        /// 在 Timeline Track 中，最终 Transform 写入由 VFXSplineAnimationMixer 完成，确保 Clip Blend 正常。
+        /// </summary>
         public override void ProcessFrame(Playable playable, FrameData info, object playerData)
         {
             Transform target = playerData as Transform;
-            if (target == null || spline == null) return;
+            if (target == null)
+                return;
 
-            Vector3 position;
-            Quaternion rotation;
-            bool hasRotation;
-            float p;
-            EvaluatePose(playable, target, out position, out rotation, out hasRotation, out p);
+            EvaluationResult result;
+            if (!Evaluate(playable, target, out result))
+                return;
 
-            target.position = position;
-            if (hasRotation)
-                target.rotation = rotation;
+            // 注意：Track Mixer 会在之后再次按权重写入最终结果。
+            // 这里保留写入是为了兼容极少数没有 Mixer 的直接 Playable 使用场景。
+            target.position = result.position;
+            if (result.hasRotation)
+                target.rotation = result.rotation;
 
-            ProcessEvents(p);
+            if (triggerEvents && Application.isPlaying && spline != null && spline.events != null)
+                CheckEvents(result.progress);
+
+            previousProgress = result.progress;
+            hasPrevious = true;
         }
 
-        public bool EvaluatePose(Playable playable, Transform target, out Vector3 position, out Quaternion rotation, out bool hasRotation, out float evaluatedProgress)
+        public bool Evaluate(Playable playable, Transform target, out EvaluationResult result)
         {
-            position = target != null ? target.position : Vector3.zero;
-            rotation = target != null ? target.rotation : Quaternion.identity;
-            hasRotation = false;
-            evaluatedProgress = 0f;
+            result = default;
 
             if (target == null || spline == null)
                 return false;
 
             float normalizedTime;
-
             if (loopPlayback)
             {
                 float cycle = Mathf.Max(0.01f, secondsPerLoop);
@@ -90,18 +103,24 @@ namespace VFXTimelineSplineTool
                 normalizedTime = Mathf.Clamp01(normalizedTime);
             }
 
-            float curveT = useSpeedCurve && speedCurve != null ? Mathf.Clamp01(speedCurve.Evaluate(normalizedTime)) : normalizedTime;
+            float curveT = useSpeedCurve && speedCurve != null
+                ? Mathf.Clamp01(speedCurve.Evaluate(normalizedTime))
+                : normalizedTime;
+
             float p = Mathf.LerpUnclamped(startProgress, endProgress, curveT);
 
-            if (reverse) p = 1f - p;
+            if (reverse)
+                p = 1f - p;
 
             if (loop || loopPlayback)
                 p = Mathf.Repeat(p, 1f);
             else
                 p = Mathf.Clamp01(p);
 
-            evaluatedProgress = p;
-            position = spline.GetPoint(p, useDistanceBasedProgress) + positionOffset;
+            result.progress = p;
+            result.position = spline.GetPoint(p, useDistanceBasedProgress) + positionOffset;
+            result.rotation = target.rotation;
+            result.hasRotation = false;
 
             if (followRotation && rotationMode != VFXSplineRotationMode.None)
             {
@@ -109,30 +128,24 @@ namespace VFXTimelineSplineTool
                 if (tangent.sqrMagnitude < 0.000001f)
                     tangent = fallbackForward.sqrMagnitude > 0.000001f ? fallbackForward.normalized : Vector3.forward;
 
-                rotation = BuildRotation(target, tangent) * Quaternion.Euler(rotationOffsetEuler);
-                hasRotation = true;
+                result.rotation = BuildRotation(target, tangent) * Quaternion.Euler(rotationOffsetEuler);
+                result.hasRotation = true;
             }
 
             return true;
         }
 
-        public void ProcessEvents(float evaluatedProgress)
-        {
-            if (triggerEvents && Application.isPlaying && spline.events != null)
-                CheckEvents(evaluatedProgress);
-
-            previousProgress = evaluatedProgress;
-            hasPrevious = true;
-        }
-
         private Quaternion BuildRotation(Transform target, Vector3 tangent)
         {
             Vector3 forward = tangent.normalized;
+
             if (rotationMode == VFXSplineRotationMode.YawOnly)
             {
                 forward.y = 0f;
-                if (forward.sqrMagnitude < 0.000001f) forward = target.forward;
+                if (forward.sqrMagnitude < 0.000001f)
+                    forward = target.forward;
             }
+
             Quaternion look = Quaternion.LookRotation(forward.normalized, Vector3.up);
             return look * Quaternion.Inverse(VFXSplineAnimator.AxisToRotation(forwardAxis));
         }
@@ -148,6 +161,7 @@ namespace VFXTimelineSplineTool
 
             float from = previousProgress;
             float to = current;
+
             if (Mathf.Abs(to - from) > 0.5f)
             {
                 spline.ResetEventFireStates();
@@ -158,9 +172,12 @@ namespace VFXTimelineSplineTool
             for (int i = 0; i < spline.events.Count; i++)
             {
                 VFXSplineEvent e = spline.events[i];
-                if (e == null || !e.enabled) continue;
+                if (e == null || !e.enabled)
+                    continue;
+
                 float ep = Mathf.Clamp01(e.progress);
                 bool crossed = forward ? (ep > from && ep <= to) : (ep < from && ep >= to);
+
                 if (crossed && !e.fired)
                 {
                     e.Trigger(null, spline, ep, useDistanceBasedProgress);
