@@ -61,7 +61,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
             serializedObject.Update();
 
-            DrawProperty("pathMode", "Path Mode");
+            DrawPathModeProperty(spline);
             DrawProperty("pathColor", "Path Color");
             DrawProperty("progressMarkColor", "Progress Mark Color");
             DrawProperty("lineWidth", "Line Width");
@@ -70,6 +70,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("Display", EditorStyles.boldLabel);
+            DrawPointEditModeControls(spline);
             DrawProperty("alwaysShowPathInSceneView", "Always Show Path In Scene View");
             DrawProperty("showPointLabels", "Show Point Labels");
             DrawProperty("showAllPointHandles", "Show All Point Handles");
@@ -119,11 +120,12 @@ namespace VFXTimelineSplineTool.EditorTools
                 DrawProperty("bezierPoints", "Bezier Points", true);
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button("Convert Catmull-Rom To Bezier"))
-                        ModifySpline(spline, "Convert Catmull-Rom To Bezier", () => spline.ConvertCatmullRomToBezier());
-
-                    if (GUILayout.Button("Copy Bezier Points To Catmull-Rom"))
-                        ModifySpline(spline, "Copy Bezier Points To Catmull-Rom", () => spline.ConvertBezierToCatmullRom());
+                    if (GUILayout.Button("Convert Bezier To Catmull-Rom"))
+                        ModifySpline(spline, "Convert Bezier To Catmull-Rom", () =>
+                        {
+                            spline.ConvertBezierToCatmullRom();
+                            spline.pathMode = VFXSplinePathMode.CatmullRom;
+                        });
                 }
             }
             else
@@ -131,8 +133,8 @@ namespace VFXTimelineSplineTool.EditorTools
                 DrawProperty("localPoints", "Local Points", true);
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button("Convert Current Points To Bezier"))
-                        ModifySpline(spline, "Convert Current Points To Bezier", () =>
+                    if (GUILayout.Button("Convert Catmull-Rom To Bezier"))
+                        ModifySpline(spline, "Convert Catmull-Rom To Bezier", () =>
                         {
                             spline.ConvertCatmullRomToBezier();
                             spline.pathMode = VFXSplinePathMode.Bezier;
@@ -178,6 +180,62 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             SerializedProperty p = serializedObject.FindProperty(name);
             if (p != null) EditorGUILayout.PropertyField(p, new GUIContent(label), includeChildren);
+        }
+
+        private static void DrawPointEditModeControls(VFXSimpleSpline spline)
+        {
+            EditorGUI.BeginChangeCheck();
+            VFXSplinePointEditMode mode = (VFXSplinePointEditMode)EditorGUILayout.EnumPopup("Edit Mode", VFXSplinePointAPI.EditMode);
+            if (EditorGUI.EndChangeCheck())
+            {
+                if (mode == VFXSplinePointEditMode.Points)
+                    VFXSplinePointAPI.EnterPointMode(spline);
+                else
+                    VFXSplinePointAPI.EnterObjectMode();
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Edit Points"))
+                    VFXSplinePointAPI.EnterPointMode(spline);
+                if (GUILayout.Button("Move Spline Object"))
+                    VFXSplinePointAPI.EnterObjectMode();
+            }
+
+            EditorGUILayout.HelpBox(VFXSplinePointAPI.IsPointMode
+                ? "Point Mode: Unity Transform Gizmo is hidden and this spline stays editable even if you click empty Scene space. Press P in Scene View or Esc to return to Object Mode."
+                : "Object Mode: Unity Transform Gizmo is visible for moving the whole Spline object. Press P in Scene View or use Edit Points to edit control points.",
+                MessageType.None);
+        }
+
+        private void DrawPathModeProperty(VFXSimpleSpline spline)
+        {
+            SerializedProperty pathModeProp = serializedObject.FindProperty("pathMode");
+            if (pathModeProp == null)
+                return;
+
+            VFXSplinePathMode oldMode = (VFXSplinePathMode)pathModeProp.enumValueIndex;
+            EditorGUI.BeginChangeCheck();
+            VFXSplinePathMode newMode = (VFXSplinePathMode)EditorGUILayout.EnumPopup(new GUIContent("Path Mode"), oldMode);
+            if (!EditorGUI.EndChangeCheck() || newMode == oldMode)
+                return;
+
+            serializedObject.ApplyModifiedProperties();
+            ModifySpline(spline, "Change Spline Path Mode", () =>
+            {
+                if (newMode == VFXSplinePathMode.Bezier)
+                {
+                    spline.ConvertCatmullRomToBezier();
+                    spline.pathMode = VFXSplinePathMode.Bezier;
+                    spline.showAllPointHandles = false;
+                }
+                else
+                {
+                    spline.ConvertBezierToCatmullRom();
+                    spline.pathMode = VFXSplinePathMode.CatmullRom;
+                }
+            });
+            serializedObject.Update();
         }
 
         private static void ModifySpline(VFXSimpleSpline spline, string undoName, System.Action action)
@@ -244,6 +302,9 @@ namespace VFXTimelineSplineTool.EditorTools
                 spline.localPoints = GeneratePresetPoints(selectedShapePreset);
                 if (spline.pathMode == VFXSplinePathMode.Bezier)
                     spline.ConvertCatmullRomToBezier();
+                int activePointCount = spline.GetActivePointCount();
+                if (activePointCount > 0)
+                    spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, activePointCount - 1);
                 spline.MarkDistanceCacheDirty();
             });
         }
@@ -860,14 +921,25 @@ namespace VFXTimelineSplineTool.EditorTools
             if (spline.selectedPointIndex < 0 || spline.selectedPointIndex >= count)
                 spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, count - 1);
 
+            if (VFXSplinePointAPI.HandleShortcut(Event.current, spline))
+                return;
+
+            if (!VFXSplinePointAPI.IsPointMode)
+                return;
+
+            if (TryForceSelectNearestPoint(spline, count))
+                return;
+
             for (int i = 0; i < count; i++)
             {
                 Vector3 world = spline.GetEffectiveWorldPoint(i);
                 bool isDynamicBoundPoint = spline.IsPointDynamicallyBound(i);
                 Transform boundTransform = spline.GetDynamicBindingTransformForPoint(i);
-                float size = HandleUtility.GetHandleSize(world) * spline.pointSize;
                 bool isPrimarySelectedPoint = spline.selectedPointIndex == i;
                 bool isSelectedPoint = spline.showAllPointHandles || isPrimarySelectedPoint;
+                float baseSize = HandleUtility.GetHandleSize(world) * spline.pointSize;
+                float size = isPrimarySelectedPoint ? baseSize * 1.6f : baseSize;
+                float pickSize = Mathf.Max(size * 1.25f, baseSize * VFXSplinePointAPI.PickSizeMultiplier);
 
                 Handles.color = isDynamicBoundPoint ? new Color(0.2f, 1f, 0.35f, 1f) : (isSelectedPoint ? Color.yellow : spline.pathColor);
 
@@ -875,7 +947,7 @@ namespace VFXTimelineSplineTool.EditorTools
                     HandleBezierPointContextMenu(spline, i, world, size);
 
                 // 未选中的控制点只显示小球；点击小球后，才显示该点的 Position Handle。
-                if (Handles.Button(world, Quaternion.identity, size, size * 1.25f, Handles.SphereHandleCap))
+                if (Handles.Button(world, Quaternion.identity, size, pickSize, Handles.SphereHandleCap))
                 {
                     Undo.RecordObject(spline, "Select Spline Point");
                     spline.selectedPointIndex = i;
@@ -927,6 +999,34 @@ namespace VFXTimelineSplineTool.EditorTools
 
             if (spline.pathMode == VFXSplinePathMode.Bezier)
                 HandleBezierCurveContextMenu(spline);
+        }
+
+        private static bool TryForceSelectNearestPoint(VFXSimpleSpline spline, int count)
+        {
+            Event e = Event.current;
+            if (e == null || !e.shift || e.type != EventType.MouseDown || e.button != 0 || spline == null || count <= 0)
+                return false;
+
+            int bestIndex = -1;
+            float bestDistance = float.MaxValue;
+            float maxDistance = Mathf.Max(14f, 12f * VFXSplinePointAPI.PickSizeMultiplier);
+            for (int i = 0; i < count; i++)
+            {
+                Vector2 pointGui = HandleUtility.WorldToGUIPoint(spline.GetEffectiveWorldPoint(i));
+                float distance = Vector2.Distance(e.mousePosition, pointGui);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestIndex = i;
+                }
+            }
+
+            if (bestIndex < 0 || bestDistance > maxDistance)
+                return false;
+
+            VFXSplinePointAPI.SelectPoint(spline, bestIndex);
+            e.Use();
+            return true;
         }
 
         private static void HandleBezierCurveContextMenu(VFXSimpleSpline spline)

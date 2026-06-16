@@ -77,7 +77,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 return;
             }
 
-            int count = VFXSplinePointEditingOverlay.GetPointCount(spline);
+            int count = VFXSplinePointAPI.GetPointCount(spline);
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("Path Info", EditorStyles.boldLabel);
             EditorGUILayout.LabelField("Mode", spline.pathMode.ToString());
@@ -92,17 +92,30 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             EditorGUILayout.LabelField("Scene Handle Overlay", EditorStyles.boldLabel);
             EditorGUI.BeginChangeCheck();
-            bool enabled = EditorGUILayout.Toggle("Enable Offset Handles", VFXSplinePointEditingOverlay.Enabled);
-            float offset = EditorGUILayout.Slider("Handle Offset", VFXSplinePointEditingOverlay.OffsetScale, 0f, 1.5f);
-            bool largerFirst = EditorGUILayout.Toggle("Larger First Point", VFXSplinePointEditingOverlay.LargerFirstPoint);
+            VFXSplinePointEditMode mode = (VFXSplinePointEditMode)EditorGUILayout.EnumPopup("Edit Mode", VFXSplinePointAPI.EditMode);
+            bool enabled = EditorGUILayout.Toggle("Enable Point Handles", VFXSplinePointAPI.Enabled);
+            float pickSize = EditorGUILayout.Slider("Pick Size Multiplier", VFXSplinePointAPI.PickSizeMultiplier, 1f, 8f);
+            bool largerFirst = EditorGUILayout.Toggle("Larger First Point", VFXSplinePointAPI.LargerFirstPoint);
             if (EditorGUI.EndChangeCheck())
             {
-                VFXSplinePointEditingOverlay.Enabled = enabled;
-                VFXSplinePointEditingOverlay.OffsetScale = offset;
-                VFXSplinePointEditingOverlay.LargerFirstPoint = largerFirst;
+                if (mode == VFXSplinePointEditMode.Points)
+                    VFXSplinePointAPI.EnterPointMode(spline);
+                else
+                    VFXSplinePointAPI.EnterObjectMode();
+                VFXSplinePointAPI.Enabled = enabled;
+                VFXSplinePointAPI.PickSizeMultiplier = pickSize;
+                VFXSplinePointAPI.LargerFirstPoint = largerFirst;
             }
 
-            EditorGUILayout.HelpBox("Scene 里的可点击点会向相机方向偏移一点，并用细线连回真实顶点。这样 P0 和 Spline 物体坐标轴重合时也能选中。快捷键：F 聚焦当前点，Shift+A 末尾加点，Delete 删除当前点。", MessageType.None);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Edit Points"))
+                    VFXSplinePointAPI.EnterPointMode(spline);
+                if (GUILayout.Button("Move Spline Object"))
+                    VFXSplinePointAPI.EnterObjectMode();
+            }
+
+            EditorGUILayout.HelpBox("Object Mode shows Unity's Transform Gizmo for moving the whole spline. Point Mode keeps the current spline editable even after clicking empty Scene space. Shortcuts: P toggles point editing in Scene View, Esc returns to Object Mode, F frames the selected point, Shift+A adds a point, Delete removes the selected point.", MessageType.None);
         }
 
         private void DrawToolbar(int count)
@@ -112,15 +125,24 @@ namespace VFXTimelineSplineTool.EditorTools
 
             using (new EditorGUILayout.HorizontalScope())
             {
+                using (new EditorGUI.DisabledScope(count <= 0))
+                {
+                    if (GUILayout.Button("Select P0"))
+                    {
+                        VFXSplinePointAPI.SelectPoint(spline, 0);
+                        Repaint();
+                    }
+                }
+
                 if (GUILayout.Button("Add End"))
-                    VFXSplinePointEditingOverlay.AddPointAtEnd(spline);
+                    VFXSplinePointAPI.AddPointAtEnd(spline);
 
                 using (new EditorGUI.DisabledScope(count <= 0))
                 {
                     if (GUILayout.Button("Insert After"))
-                        VFXSplinePointEditingOverlay.InsertPointAfter(spline, spline.selectedPointIndex);
+                        VFXSplinePointAPI.InsertPointAfter(spline, spline.selectedPointIndex);
                     if (GUILayout.Button("Delete Selected"))
-                        VFXSplinePointEditingOverlay.DeletePoint(spline, spline.selectedPointIndex);
+                        VFXSplinePointAPI.DeletePoint(spline, spline.selectedPointIndex);
                 }
             }
 
@@ -183,23 +205,23 @@ namespace VFXTimelineSplineTool.EditorTools
                     FocusSelectedPoint();
                 }
                 if (GUILayout.Button("Insert", GUILayout.Width(58)))
-                    VFXSplinePointEditingOverlay.InsertPointAfter(spline, index);
+                    VFXSplinePointAPI.InsertPointAfter(spline, index);
                 using (new EditorGUI.DisabledScope(count <= 2))
                 {
                     if (GUILayout.Button("Delete", GUILayout.Width(58)))
-                        VFXSplinePointEditingOverlay.DeletePoint(spline, index);
+                        VFXSplinePointAPI.DeletePoint(spline, index);
                 }
             }
 
             EditorGUI.BeginChangeCheck();
-            Vector3 local = VFXSplinePointEditingOverlay.GetPointLocal(spline, index);
+            Vector3 local = VFXSplinePointAPI.GetPointLocal(spline, index);
             Vector3 newLocal = EditorGUILayout.Vector3Field("Local", local);
             if (EditorGUI.EndChangeCheck())
-                VFXSplinePointEditingOverlay.SetPointLocal(spline, index, newLocal);
+                VFXSplinePointAPI.SetPointLocal(spline, index, newLocal);
 
             using (new EditorGUI.DisabledScope(true))
             {
-                Vector3 world = VFXSplinePointEditingOverlay.GetPointWorld(spline, index);
+                Vector3 world = VFXSplinePointAPI.GetPointWorld(spline, index);
                 EditorGUILayout.Vector3Field("World", world);
             }
 
@@ -220,7 +242,7 @@ namespace VFXTimelineSplineTool.EditorTools
             if (spline == null)
                 return;
             Undo.RecordObject(spline, "Select Spline Point");
-            spline.selectedPointIndex = Mathf.Clamp(index, 0, VFXSplinePointEditingOverlay.GetPointCount(spline) - 1);
+            spline.selectedPointIndex = Mathf.Clamp(index, 0, VFXSplinePointAPI.GetPointCount(spline) - 1);
             EditorUtility.SetDirty(spline);
             SceneView.RepaintAll();
             Repaint();
@@ -236,7 +258,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 sceneView = SceneView.sceneViews[0] as SceneView;
 
             if (sceneView != null)
-                VFXSplinePointEditingOverlay.FramePoint(sceneView, spline, spline.selectedPointIndex);
+                VFXSplinePointAPI.FramePoint(sceneView, spline, spline.selectedPointIndex);
         }
     }
 }
