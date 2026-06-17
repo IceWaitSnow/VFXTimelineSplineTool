@@ -17,40 +17,40 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             VFXSplineAnimator animator = (VFXSplineAnimator)target;
 
-            EditorGUILayout.LabelField("VFX Spline Animator - 路径运动控制 v2.6.4", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("VFX Spline Animator - 路径运动控制 v" + VFXSplineToolVersion.Version, EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
-                "推荐流程：用 Unity 原生 AnimationClip / Timeline Animation Track 给 Progress 打关键帧，控制物体沿 Spline 运动。v2.6.4 修复 Timeline Track Blending，并给 Timeline Infinite Clip 烘焙增加 Hold/Loop 模式。",
+                "推荐流程：用 Unity 原生 AnimationClip / Timeline Animation Track 给 Progress 打关键帧，控制物体沿 Spline 运动。当前版本支持 Timeline Clip Blending、Timeline Infinite Clip Hold/Loop 烘焙，以及烘焙前检查。",
                 MessageType.Info);
 
             serializedObject.Update();
 
-            DrawProperty("spline", "Spline");
+            DrawProperty("spline", "Spline 路径");
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Animation Track 可K参数", EditorStyles.boldLabel);
-            DrawProperty("progress", "Progress");
+            EditorGUILayout.LabelField("Animation Track 可 K 参数", EditorStyles.boldLabel);
+            DrawProperty("progress", "Progress 进度");
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Motion", EditorStyles.boldLabel);
-            DrawProperty("reverse", "Reverse");
-            DrawProperty("loop", "Loop");
-            DrawProperty("useDistanceBasedProgress", "Use Distance Based Progress");
-            DrawProperty("positionOffset", "Position Offset");
+            EditorGUILayout.LabelField("运动设置", EditorStyles.boldLabel);
+            DrawProperty("reverse", "反向");
+            DrawProperty("loop", "循环");
+            DrawProperty("useDistanceBasedProgress", "使用距离等速 Progress");
+            DrawProperty("positionOffset", "位置偏移");
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Rotation", EditorStyles.boldLabel);
-            DrawProperty("rotationMode", "Rotation Mode");
-            DrawProperty("forwardAxis", "Forward Axis");
-            DrawProperty("rotationOffsetEuler", "Rotation Offset Euler");
-            DrawProperty("fallbackForward", "Fallback Forward");
+            EditorGUILayout.LabelField("旋转设置", EditorStyles.boldLabel);
+            DrawProperty("rotationMode", "旋转模式");
+            DrawProperty("forwardAxis", "前向轴");
+            DrawProperty("rotationOffsetEuler", "旋转偏移 Euler");
+            DrawProperty("fallbackForward", "备用前向");
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Editor Preview", EditorStyles.boldLabel);
-            DrawProperty("editorPreviewMode", "Editor Preview Mode");
-            DrawProperty("previewInEditMode", "Preview In Edit Mode");
-            DrawProperty("applyOnValidate", "Apply On Validate");
-            DrawProperty("showCurrentProgressPoint", "Show Current Progress Point");
-            DrawProperty("previewColor", "Preview Color");
+            EditorGUILayout.LabelField("编辑器预览", EditorStyles.boldLabel);
+            DrawProperty("editorPreviewMode", "编辑器预览模式");
+            DrawProperty("previewInEditMode", "编辑模式预览");
+            DrawProperty("applyOnValidate", "参数变化时自动应用");
+            DrawProperty("showCurrentProgressPoint", "显示当前 Progress 点");
+            DrawProperty("previewColor", "预览颜色");
 
             serializedObject.ApplyModifiedProperties();
 
@@ -58,14 +58,14 @@ namespace VFXTimelineSplineTool.EditorTools
             EditorGUILayout.LabelField("Progress 快捷设置", EditorStyles.boldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Set 0%")) SetProgress(animator, 0f);
-                if (GUILayout.Button("Set 25%")) SetProgress(animator, 0.25f);
-                if (GUILayout.Button("Set 50%")) SetProgress(animator, 0.5f);
-                if (GUILayout.Button("Set 75%")) SetProgress(animator, 0.75f);
-                if (GUILayout.Button("Set 100%")) SetProgress(animator, 1f);
+                if (GUILayout.Button("设为 0%")) SetProgress(animator, 0f);
+                if (GUILayout.Button("设为 25%")) SetProgress(animator, 0.25f);
+                if (GUILayout.Button("设为 50%")) SetProgress(animator, 0.5f);
+                if (GUILayout.Button("设为 75%")) SetProgress(animator, 0.75f);
+                if (GUILayout.Button("设为 100%")) SetProgress(animator, 1f);
             }
 
-            if (GUILayout.Button("Apply Current Progress"))
+            if (GUILayout.Button("应用当前 Progress"))
             {
                 Undo.RecordObject(animator.transform, "Apply Current Progress");
                 animator.ApplyCurrentProgress(true);
@@ -73,22 +73,22 @@ namespace VFXTimelineSplineTool.EditorTools
                 SceneView.RepaintAll();
             }
 
-            if (GUILayout.Button("Set Progress To Start")) SetProgress(animator, 0f);
-            if (GUILayout.Button("Set Progress To End")) SetProgress(animator, 1f);
+            if (GUILayout.Button("Progress 设为起点")) SetProgress(animator, 0f);
+            if (GUILayout.Button("Progress 设为终点")) SetProgress(animator, 1f);
 
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("工具", EditorStyles.boldLabel);
-            if (GUILayout.Button("Add Animator If Missing"))
+            if (GUILayout.Button("缺少 Animator 时自动添加"))
             {
                 AddAnimatorIfMissing(animator.gameObject);
             }
 
-            if (GUILayout.Button("Create Default Progress AnimationClip"))
+            if (GUILayout.Button("创建默认 Progress AnimationClip"))
             {
                 CreateDefaultProgressClip(animator);
             }
 
-            if (GUILayout.Button("Setup Animation Track Mode（推荐）"))
+            if (GUILayout.Button("设置 Animation Track 工作流（推荐）"))
             {
                 AddAnimatorIfMissing(animator.gameObject);
                 CreateDefaultProgressClip(animator);
@@ -96,24 +96,24 @@ namespace VFXTimelineSplineTool.EditorTools
             }
 
             EditorGUILayout.Space(10);
-            EditorGUILayout.LabelField("Bake To AnimationClip / 烘焙", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("烘焙为 AnimationClip", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "把当前 Spline 驱动结果烘焙成 Unity 原生 Transform AnimationClip。Bake Progress Source 用来决定烘焙时 Progress 从哪里来；Keyframe Step / Optimize Curves 用来减少关键帧。",
                 MessageType.Info);
 
             serializedObject.Update();
-            DrawProperty("bakeFrameRate", "Frame Rate");
-            DrawProperty("bakeDuration", "Duration");
-            DrawProperty("bakePosition", "Bake Position");
-            DrawProperty("bakeRotation", "Bake Rotation");
-            DrawProperty("bakeProgressSource", "Bake Progress Source");
+            DrawProperty("bakeFrameRate", "帧率 Frame Rate");
+            DrawProperty("bakeDuration", "时长 Duration");
+            DrawProperty("bakePosition", "烘焙位置");
+            DrawProperty("bakeRotation", "烘焙旋转");
+            DrawProperty("bakeProgressSource", "Progress 来源");
 
             SerializedProperty progressSourceProp = serializedObject.FindProperty("bakeProgressSource");
             VFXSplineBakeProgressSource progressSource = (VFXSplineBakeProgressSource)progressSourceProp.enumValueIndex;
 
             if (progressSource == VFXSplineBakeProgressSource.BakeProgressCurve)
             {
-                DrawProperty("bakeProgressCurve", "Bake Progress Curve");
+                DrawProperty("bakeProgressCurve", "烘焙 Progress 曲线");
                 EditorGUILayout.HelpBox("使用 Bake Progress Curve 控制烘焙节奏。适合没有单独 K Progress、只想快速做缓入缓出/停顿/回弹的情况。", MessageType.None);
             }
             else if (progressSource == VFXSplineBakeProgressSource.CurrentAnimatorProgress)
@@ -122,15 +122,15 @@ namespace VFXTimelineSplineTool.EditorTools
             }
             else if (progressSource == VFXSplineBakeProgressSource.ExistingAnimationClipProgressCurve)
             {
-                DrawProperty("bakeSourceProgressClip", "Source Progress Clip");
-                DrawProperty("bakeSourceClipUseNormalizedTime", "Use Normalized Source Time");
+                DrawProperty("bakeSourceProgressClip", "源 Progress Clip");
+                DrawProperty("bakeSourceClipUseNormalizedTime", "使用归一化源时间");
                 EditorGUILayout.HelpBox("读取已有 AnimationClip 里的 VFXSplineAnimator.progress 曲线。适合你已经用 Animation Track 精细 K 好 Progress 后，再烘焙成普通 Transform AnimationClip。", MessageType.Info);
             }
             else if (progressSource == VFXSplineBakeProgressSource.TimelineBoundAnimationTrack)
             {
                 DrawProperty("bakePlayableDirector", "Playable Director");
-                DrawProperty("bakeUseTimelineClipDuration", "Use Timeline Clip Duration");
-                DrawProperty("bakeTimelineInfiniteClipMode", "Infinite Clip Mode");
+                DrawProperty("bakeUseTimelineClipDuration", "使用 Timeline Clip 时长");
+                DrawProperty("bakeTimelineInfiniteClipMode", "Infinite Clip 模式");
 
                 TimelineProgressSource found;
                 string message;
@@ -146,7 +146,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
                 using (new EditorGUI.DisabledScope(!ok))
                 {
-                    if (GUILayout.Button("Use Found Timeline Clip Duration"))
+                    if (GUILayout.Button("使用找到的 Timeline Clip 时长"))
                     {
                         Undo.RecordObject(animator, "Use Timeline Clip Duration");
                         animator.bakeDuration = Mathf.Max(0.01f, (float)found.timelineDuration);
@@ -161,27 +161,32 @@ namespace VFXTimelineSplineTool.EditorTools
                 EditorGUILayout.HelpBox("Linear 0→1：烘焙时 Progress 会在 Duration 内从 0 匀速走到 1。", MessageType.None);
             }
 
-            DrawProperty("bakeSaveFolder", "Save Folder");
-            DrawProperty("bakeClipName", "Clip Name");
-            DrawProperty("bakeAddAnimatorIfMissing", "Add Animator If Missing");
+            DrawProperty("bakeSaveFolder", "保存目录");
+            DrawProperty("bakeClipName", "Clip 名称");
+            DrawProperty("bakeAddAnimatorIfMissing", "缺少 Animator 时自动添加");
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Bake Simplify / 关键帧简化", EditorStyles.boldLabel);
-            DrawProperty("bakeKeyframeStep", "Keyframe Step");
-            DrawProperty("bakeAlwaysKeyStartAndEnd", "Always Key Start And End");
-            DrawProperty("bakeOptimizeCurves", "Optimize Curves");
+            EditorGUILayout.LabelField("烘焙关键帧简化", EditorStyles.boldLabel);
+            DrawProperty("bakeKeyframeStep", "关键帧间隔 Keyframe Step");
+            DrawProperty("bakeAlwaysKeyStartAndEnd", "强制记录首尾帧");
+            DrawProperty("bakeOptimizeCurves", "优化曲线");
 
             if (serializedObject.FindProperty("bakeOptimizeCurves").boolValue)
             {
-                DrawProperty("bakePositionTolerance", "Position Tolerance");
-                DrawProperty("bakeRotationTolerance", "Rotation Tolerance");
+                DrawProperty("bakePositionTolerance", "位置误差阈值");
+                DrawProperty("bakeRotationTolerance", "旋转误差阈值");
             }
 
             serializedObject.ApplyModifiedProperties();
 
-            using (new EditorGUI.DisabledScope(animator.spline == null || (!animator.bakePosition && !animator.bakeRotation)))
+            string preflightMessage;
+            MessageType preflightType;
+            bool canBake = GetBakePreflight(animator, out preflightMessage, out preflightType);
+            EditorGUILayout.HelpBox(preflightMessage, preflightType);
+
+            using (new EditorGUI.DisabledScope(!canBake))
             {
-                if (GUILayout.Button("Bake To AnimationClip"))
+                if (GUILayout.Button("烘焙为 AnimationClip"))
                 {
                     BakeToAnimationClip(animator);
                 }
@@ -192,7 +197,36 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             SerializedProperty p = serializedObject.FindProperty(name);
             if (p != null)
-                EditorGUILayout.PropertyField(p, new GUIContent(label));
+                EditorGUILayout.PropertyField(p, BuildContent(label, name, p));
+        }
+
+        private static GUIContent BuildContent(string label, string propertyName, SerializedProperty property)
+        {
+            string tooltip = !string.IsNullOrEmpty(property.tooltip) ? property.tooltip : GetAnimatorPropertyTooltip(propertyName);
+            return new GUIContent(label, tooltip);
+        }
+
+        private static string GetAnimatorPropertyTooltip(string propertyName)
+        {
+            switch (propertyName)
+            {
+                case "spline": return "驱动物体运动的 Spline 路径。";
+                case "progress": return "物体在路径上的进度，0 为起点，1 为终点。通常由 Animation Track 或 Timeline 控制。";
+                case "reverse": return "反向读取 Progress，让 0 对应终点、1 对应起点。";
+                case "loop": return "Progress 超出 0-1 时循环回路径范围内。";
+                case "useDistanceBasedProgress": return "开启后按路径实际距离计算 Progress，让运动速度更均匀。";
+                case "positionOffset": return "沿路径计算位置后额外叠加的世界坐标偏移。";
+                case "rotationMode": return "是否根据路径切线自动旋转物体。";
+                case "forwardAxis": return "指定模型哪根本地轴作为前进方向。";
+                case "rotationOffsetEuler": return "在路径方向旋转之后额外叠加的 Euler 角偏移。";
+                case "fallbackForward": return "路径切线过短时使用的备用前向方向。";
+                case "editorPreviewMode": return "控制编辑模式下是否自动预览路径运动结果。";
+                case "previewInEditMode": return "旧版预览开关，保留兼容。关闭后等同于编辑器预览关闭。";
+                case "applyOnValidate": return "Inspector 参数变化时立即把当前 Progress 应用到 Transform。";
+                case "showCurrentProgressPoint": return "在 Scene 视图中显示当前 Progress 所在点。";
+                case "previewColor": return "当前 Progress 点和方向箭头的显示颜色。";
+                default: return "";
+            }
         }
 
         private static void SetProgress(VFXSplineAnimator animator, float value)
@@ -273,7 +307,7 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             if (animator == null || animator.spline == null)
             {
-                EditorUtility.DisplayDialog("Bake To AnimationClip", "请先指定 Spline。", "OK");
+                EditorUtility.DisplayDialog("烘焙为 AnimationClip", "请先指定 Spline。", "确定");
                 return;
             }
 
@@ -288,7 +322,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 hasTimelineSource = TryFindTimelineProgressSource(animator, out timelineSource, out timelineMessage);
                 if (!hasTimelineSource)
                 {
-                    EditorUtility.DisplayDialog("Bake From Timeline", timelineMessage, "OK");
+                    EditorUtility.DisplayDialog("从 Timeline 烘焙", timelineMessage, "确定");
                     return;
                 }
 
@@ -399,7 +433,87 @@ namespace VFXTimelineSplineTool.EditorTools
             Selection.activeObject = clip;
             EditorGUIUtility.PingObject(clip);
 
-            Debug.Log("[VFX Timeline Spline Tool] Bake To AnimationClip 完成: " + path + " | Keyframes: " + samples.Count + " | Step: " + keyframeStep + " | ProgressSource: " + animator.bakeProgressSource, clip);
+            string report = BuildBakeReport(path, duration, frameRate, frameCount, samples.Count, keyframeStep, animator.bakeProgressSource.ToString(), hasTimelineSource ? BuildTimelineFoundMessage(timelineSource) : null, animator.bakeOptimizeCurves);
+            Debug.Log(report, clip);
+        }
+
+        private static bool GetBakePreflight(VFXSplineAnimator animator, out string message, out MessageType messageType)
+        {
+            if (animator == null)
+            {
+                message = "烘焙预检查：缺少 VFXSplineAnimator。";
+                messageType = MessageType.Error;
+                return false;
+            }
+
+            if (animator.spline == null)
+            {
+                message = "烘焙预检查：请先指定 Spline。";
+                messageType = MessageType.Warning;
+                return false;
+            }
+
+            if (!animator.bakePosition && !animator.bakeRotation)
+            {
+                message = "烘焙预检查：请至少开启“烘焙位置”或“烘焙旋转”。";
+                messageType = MessageType.Warning;
+                return false;
+            }
+
+            if (animator.bakeProgressSource == VFXSplineBakeProgressSource.ExistingAnimationClipProgressCurve)
+            {
+                if (animator.bakeSourceProgressClip == null)
+                {
+                    message = "烘焙预检查：缺少源 Progress Clip。请指定 Clip，或改用其他 Progress 来源。";
+                    messageType = MessageType.Warning;
+                    return false;
+                }
+
+                if (FindProgressCurve(animator.bakeSourceProgressClip) == null)
+                {
+                    message = "烘焙预检查：源 Progress Clip 中没有 VFXSplineAnimator.progress 曲线，烘焙时会退回 Linear 0->1。";
+                    messageType = MessageType.Warning;
+                    return true;
+                }
+            }
+
+            if (animator.bakeProgressSource == VFXSplineBakeProgressSource.TimelineBoundAnimationTrack)
+            {
+                TimelineProgressSource found;
+                string timelineMessage;
+                if (!TryFindTimelineProgressSource(animator, out found, out timelineMessage))
+                {
+                    message = "烘焙预检查：" + timelineMessage;
+                    messageType = MessageType.Warning;
+                    return false;
+                }
+
+                message = "烘焙预检查：已就绪。Timeline 时长 " + found.timelineDuration.ToString("F2") + " 秒，Progress Clip 数量：" + GetTimelineClipCount(found) + "，输出目录：" + NormalizeAssetFolder(string.IsNullOrEmpty(animator.bakeSaveFolder) ? "Assets/Animations/SplineBakes" : animator.bakeSaveFolder.Trim());
+                messageType = MessageType.Info;
+                return true;
+            }
+
+            message = "烘焙预检查：已就绪。时长 " + Mathf.Max(0.01f, animator.bakeDuration).ToString("F2") + " 秒，帧率 " + Mathf.Clamp(animator.bakeFrameRate, 1, 240) + " fps，输出目录：" + NormalizeAssetFolder(string.IsNullOrEmpty(animator.bakeSaveFolder) ? "Assets/Animations/SplineBakes" : animator.bakeSaveFolder.Trim());
+            messageType = MessageType.Info;
+            return true;
+        }
+
+        private static string BuildBakeReport(string path, float duration, int frameRate, int frameCount, int keyframes, int keyframeStep, string progressSource, string timelineInfo, bool optimized)
+        {
+            string report = "[VFX Timeline Spline Tool] Bake To AnimationClip 完成\n" +
+                            "路径：" + path + "\n" +
+                            "时长：" + duration.ToString("F3") + " 秒\n" +
+                            "帧率：" + frameRate + "\n" +
+                            "总帧数：" + frameCount + "\n" +
+                            "关键帧数：" + keyframes + "\n" +
+                            "关键帧间隔：" + keyframeStep + "\n" +
+                            "Progress 来源：" + progressSource + "\n" +
+                            "优化曲线：" + optimized;
+
+            if (!string.IsNullOrEmpty(timelineInfo))
+                report += "\n\n" + timelineInfo;
+
+            return report;
         }
 
         private static float EvaluateBakeProgress(VFXSplineAnimator animator, float bakeTime, float normalizedTime, bool hasTimelineSource, TimelineProgressSource timelineSource)

@@ -4,7 +4,7 @@ using UnityEngine.Playables;
 namespace VFXTimelineSplineTool
 {
     /// <summary>
-    /// Timeline Track Mixer.
+    /// Timeline Track 混合器。
     /// v2.6.4：真正处理 Timeline Clip Blending。
     /// 之前每个 Clip Behaviour 会各自写 Transform，Clip 重叠时谁最后执行谁生效；
     /// 现在由 Mixer 根据 input weight 统一混合位置和旋转，再最终写入绑定的 Transform。

@@ -14,7 +14,7 @@ namespace VFXTimelineSplineTool
         public List<Vector3> localPoints = new List<Vector3>();
         public List<VFXBezierPoint> bezierPoints = new List<VFXBezierPoint>();
 
-        [Header("Optional Display Settings")]
+        [Header("可选显示设置")]
         public bool saveDisplaySettings = false;
         public Color pathColor = new Color(1f, 0.68f, 0.02f, 1f);
         public Color progressMarkColor = new Color(0.1f, 0.72f, 1f, 1f);

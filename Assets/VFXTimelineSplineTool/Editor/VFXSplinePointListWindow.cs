@@ -7,8 +7,8 @@ namespace VFXTimelineSplineTool.EditorTools
     using VFXTimelineSplineTool;
 
     /// <summary>
-    /// Inspector-like point list window.
-    /// v2.6.5: gives a reliable fallback when a Scene View handle is hidden by another gizmo.
+    /// 类 Inspector 的控制点列表窗口。
+    /// v2.6.5：当 Scene View 里的 Handle 被其他 Gizmo 挡住时，提供一个可靠的备用编辑入口。
     /// </summary>
     public class VFXSplinePointListWindow : EditorWindow
     {
@@ -57,12 +57,12 @@ namespace VFXTimelineSplineTool.EditorTools
         private void OnGUI()
         {
             EditorGUILayout.Space(6);
-            EditorGUILayout.LabelField("VFX Spline Point List v" + VFXSplineToolVersion.Version, EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("VFX Spline 控制点列表 v" + VFXSplineToolVersion.Version, EditorStyles.boldLabel);
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                autoFollowSelection = EditorGUILayout.ToggleLeft("Auto Follow Selection", autoFollowSelection, GUILayout.Width(170));
-                if (GUILayout.Button("Use Selected", GUILayout.Width(110)))
+                autoFollowSelection = EditorGUILayout.ToggleLeft("自动跟随选择", autoFollowSelection, GUILayout.Width(170));
+                if (GUILayout.Button("使用当前选择", GUILayout.Width(110)))
                     RefreshFromSelection();
             }
 
@@ -79,10 +79,10 @@ namespace VFXTimelineSplineTool.EditorTools
 
             int count = VFXSplinePointAPI.GetPointCount(spline);
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Path Info", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("Mode", spline.pathMode.ToString());
-            EditorGUILayout.LabelField("Point Count", count.ToString());
-            EditorGUILayout.LabelField("Approx Length", spline.ApproxLength.ToString("F3"));
+            EditorGUILayout.LabelField("路径信息", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("模式", spline.pathMode.ToString());
+            EditorGUILayout.LabelField("控制点数量", count.ToString());
+            EditorGUILayout.LabelField("近似长度", spline.ApproxLength.ToString("F3"));
 
             DrawToolbar(count);
             DrawPointList(count);
@@ -90,12 +90,12 @@ namespace VFXTimelineSplineTool.EditorTools
 
         private void DrawOverlaySettings()
         {
-            EditorGUILayout.LabelField("Scene Handle Overlay", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Scene 控制点覆盖层", EditorStyles.boldLabel);
             EditorGUI.BeginChangeCheck();
-            VFXSplinePointEditMode mode = (VFXSplinePointEditMode)EditorGUILayout.EnumPopup("Edit Mode", VFXSplinePointAPI.EditMode);
-            bool enabled = EditorGUILayout.Toggle("Enable Point Handles", VFXSplinePointAPI.Enabled);
-            float pickSize = EditorGUILayout.Slider("Pick Size Multiplier", VFXSplinePointAPI.PickSizeMultiplier, 1f, 8f);
-            bool largerFirst = EditorGUILayout.Toggle("Larger First Point", VFXSplinePointAPI.LargerFirstPoint);
+            VFXSplinePointEditMode mode = VFXSimpleSplineEditor.DrawPointEditModePopup(VFXSplinePointAPI.EditMode);
+            bool enabled = EditorGUILayout.Toggle(new GUIContent("启用控制点 Handle", "开启后可以在 Scene 视图中选择和移动 Spline 控制点。"), VFXSplinePointAPI.Enabled);
+            float pickSize = EditorGUILayout.Slider(new GUIContent("拾取尺寸倍数", "控制点的可点击区域放大倍数。点和 Transform Gizmo 重叠时，可以调大这个值。"), VFXSplinePointAPI.PickSizeMultiplier, 1f, 8f);
+            bool largerFirst = EditorGUILayout.Toggle(new GUIContent("放大第一个点", "让第一个控制点更容易被看到和点中。"), VFXSplinePointAPI.LargerFirstPoint);
             if (EditorGUI.EndChangeCheck())
             {
                 if (mode == VFXSplinePointEditMode.Points)
@@ -109,39 +109,39 @@ namespace VFXTimelineSplineTool.EditorTools
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Edit Points"))
+                if (GUILayout.Button("编辑控制点"))
                     VFXSplinePointAPI.EnterPointMode(spline);
-                if (GUILayout.Button("Move Spline Object"))
+                if (GUILayout.Button("移动 Spline 物体"))
                     VFXSplinePointAPI.EnterObjectMode();
             }
 
-            EditorGUILayout.HelpBox("Object Mode shows Unity's Transform Gizmo for moving the whole spline. Point Mode keeps the current spline editable even after clicking empty Scene space. Shortcuts: P toggles point editing in Scene View, Esc returns to Object Mode, F frames the selected point, Shift+A adds a point, Delete removes the selected point.", MessageType.None);
+            EditorGUILayout.HelpBox("Object Mode 显示 Unity Transform Gizmo，用来移动整条 Spline。Point Mode 会锁定当前 Spline，即使点击 Scene 空白处也继续编辑。快捷键：Scene View 中按 P 切换点编辑，Esc 返回 Object Mode，F 聚焦当前点，Shift+A 添加点，Delete 删除当前点。", MessageType.None);
         }
 
         private void DrawToolbar(int count)
         {
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Point Tools", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("控制点工具", EditorStyles.boldLabel);
 
             using (new EditorGUILayout.HorizontalScope())
             {
                 using (new EditorGUI.DisabledScope(count <= 0))
                 {
-                    if (GUILayout.Button("Select P0"))
+                    if (GUILayout.Button("选择 P0"))
                     {
                         VFXSplinePointAPI.SelectPoint(spline, 0);
                         Repaint();
                     }
                 }
 
-                if (GUILayout.Button("Add End"))
+                if (GUILayout.Button("末尾加点"))
                     VFXSplinePointAPI.AddPointAtEnd(spline);
 
                 using (new EditorGUI.DisabledScope(count <= 0))
                 {
-                    if (GUILayout.Button("Insert After"))
+                    if (GUILayout.Button("在后方插入"))
                         VFXSplinePointAPI.InsertPointAfter(spline, spline.selectedPointIndex);
-                    if (GUILayout.Button("Delete Selected"))
+                    if (GUILayout.Button("删除选中点"))
                         VFXSplinePointAPI.DeletePoint(spline, spline.selectedPointIndex);
                 }
             }
@@ -150,9 +150,9 @@ namespace VFXTimelineSplineTool.EditorTools
             {
                 using (new EditorGUI.DisabledScope(count <= 0))
                 {
-                    if (GUILayout.Button("Focus Selected"))
+                    if (GUILayout.Button("聚焦选中点"))
                         FocusSelectedPoint();
-                    if (GUILayout.Button("Rebuild Cache"))
+                    if (GUILayout.Button("重建缓存"))
                     {
                         Undo.RecordObject(spline, "Rebuild Distance Cache");
                         spline.RebuildDistanceCache();
@@ -166,7 +166,7 @@ namespace VFXTimelineSplineTool.EditorTools
         private void DrawPointList(int count)
         {
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Control Points", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("控制点", EditorStyles.boldLabel);
 
             if (count <= 0)
             {
@@ -197,18 +197,18 @@ namespace VFXTimelineSplineTool.EditorTools
                 string name = index == 0 ? "P0 Start" : (index == count - 1 ? "P" + index + " End" : "P" + index);
                 EditorGUILayout.LabelField(name, selected ? EditorStyles.boldLabel : EditorStyles.label, GUILayout.Width(90));
 
-                if (GUILayout.Button("Select", GUILayout.Width(64)))
+                if (GUILayout.Button("选择", GUILayout.Width(64)))
                     SelectPoint(index);
-                if (GUILayout.Button("Focus", GUILayout.Width(58)))
+                if (GUILayout.Button("聚焦", GUILayout.Width(58)))
                 {
                     SelectPoint(index);
                     FocusSelectedPoint();
                 }
-                if (GUILayout.Button("Insert", GUILayout.Width(58)))
+                if (GUILayout.Button("插入", GUILayout.Width(58)))
                     VFXSplinePointAPI.InsertPointAfter(spline, index);
                 using (new EditorGUI.DisabledScope(count <= 2))
                 {
-                    if (GUILayout.Button("Delete", GUILayout.Width(58)))
+                    if (GUILayout.Button("删除", GUILayout.Width(58)))
                         VFXSplinePointAPI.DeletePoint(spline, index);
                 }
             }

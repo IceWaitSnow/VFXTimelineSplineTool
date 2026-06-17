@@ -27,34 +27,34 @@ namespace VFXTimelineSplineTool
         [Header("Spline")]
         public VFXSimpleSpline spline;
 
-        [Header("Anchor Mode")]
+        [Header("Anchor 模式")]
         public VFXSplineAnchorMode anchorMode = VFXSplineAnchorMode.FixedProgress;
         public VFXSplineAnimator sourceAnimator;
         public bool autoUseSourceSpline = true;
 
-        [Header("Fixed Progress")]
+        [Header("固定 Progress")]
         [Range(0f, 1f)] public float progress = 0.5f;
 
-        [Header("Follow Animator Progress")]
+        [Header("跟随 Animator Progress")]
         public float progressOffset = 0f;
         public VFXSplineAnchorProgressWrapMode progressWrapMode = VFXSplineAnchorProgressWrapMode.Clamp;
 
-        [Header("Progress Evaluation")]
+        [Header("Progress 计算")]
         public bool useDistanceBasedProgress = true;
         public bool reverse = false;
         [HideInInspector] public bool loop = false; // 兼容旧版本序列化数据；v2.0 正式流程使用 progressWrapMode。
 
-        [Header("Position")]
+        [Header("位置")]
         public bool followPosition = true;
         public Vector3 positionOffset = Vector3.zero;
 
-        [Header("Rotation")]
+        [Header("旋转")]
         public VFXSplineRotationMode rotationMode = VFXSplineRotationMode.None;
         public VFXSplineForwardAxis forwardAxis = VFXSplineForwardAxis.ZPositive;
         public Vector3 rotationOffsetEuler = Vector3.zero;
         public Vector3 fallbackForward = Vector3.forward;
 
-        [Header("Editor Preview")]
+        [Header("编辑器预览")]
         public bool previewInEditMode = true;
         public bool applyOnValidate = true;
         public bool showSceneLabel = true;
@@ -62,7 +62,7 @@ namespace VFXTimelineSplineTool
         public Color labelColor = new Color(1f, 0.2f, 1f, 1f);
         [Min(0.02f)] public float gizmoSize = 0.18f;
 
-        [Header("Bake To AnimationClip")]
+        [Header("Bake To AnimationClip / 烘焙")]
         [Tooltip("烘焙输出的 AnimationClip 帧率。")]
         public int bakeFrameRate = 60;
         [Tooltip("烘焙动画时长，单位秒。Follow Animator Progress 时可手动填成源运动物体的烘焙时长。")]

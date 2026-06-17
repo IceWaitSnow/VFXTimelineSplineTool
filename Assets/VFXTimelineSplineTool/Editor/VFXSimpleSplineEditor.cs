@@ -62,44 +62,44 @@ namespace VFXTimelineSplineTool.EditorTools
             serializedObject.Update();
 
             DrawPathModeProperty(spline);
-            DrawProperty("pathColor", "Path Color");
-            DrawProperty("progressMarkColor", "Progress Mark Color");
-            DrawProperty("lineWidth", "Line Width");
-            DrawProperty("pointSize", "Point Size");
-            DrawProperty("resolution", "Resolution");
+            DrawProperty("pathColor", "路径颜色");
+            DrawProperty("progressMarkColor", "Progress 标记颜色");
+            DrawProperty("lineWidth", "线宽");
+            DrawProperty("pointSize", "控制点大小");
+            DrawProperty("resolution", "曲线精度");
 
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Display", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("显示设置", EditorStyles.boldLabel);
             DrawPointEditModeControls(spline);
-            DrawProperty("alwaysShowPathInSceneView", "Always Show Path In Scene View");
-            DrawProperty("showPointLabels", "Show Point Labels");
-            DrawProperty("showAllPointHandles", "Show All Point Handles");
+            DrawProperty("alwaysShowPathInSceneView", "Scene 中始终显示路径");
+            DrawProperty("showPointLabels", "显示控制点编号");
+            DrawProperty("showAllPointHandles", "显示全部控制点坐标轴");
             EditorGUILayout.HelpBox("默认只显示当前选中控制点的移动坐标轴，避免 Scene 视图太乱。点击路径控制点可切换当前编辑点；需要同时显示全部坐标轴时再勾选 Show All Point Handles。", MessageType.None);
-            DrawProperty("showProgressMarks", "Show Progress Marks");
-            DrawProperty("progressMarkCount", "Progress Mark Count");
-            DrawProperty("progressMarksUseDistance", "Progress Marks Use Distance");
-            DrawProperty("showDirectionArrows", "Show Direction Arrows");
-            DrawProperty("arrowCount", "Arrow Count");
-            DrawProperty("arrowSize", "Arrow Size");
+            DrawProperty("showProgressMarks", "显示 Progress 标记");
+            DrawProperty("progressMarkCount", "Progress 标记数量");
+            DrawProperty("progressMarksUseDistance", "Progress 标记按距离分布");
+            DrawProperty("showDirectionArrows", "显示方向箭头");
+            DrawProperty("arrowCount", "方向箭头数量");
+            DrawProperty("arrowSize", "方向箭头大小");
 
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Dynamic Start / End Binding", EditorStyles.boldLabel);
-            DrawProperty("enableDynamicStartEndBinding", "Enable Dynamic Start / End");
+            EditorGUILayout.LabelField("动态起点 / 终点绑定", EditorStyles.boldLabel);
+            DrawProperty("enableDynamicStartEndBinding", "启用动态起点 / 终点");
             if (spline.enableDynamicStartEndBinding)
             {
                 EditorGUILayout.HelpBox("开启后，路径第一个点跟随 Start Transform，最后一个点跟随 End Transform。中间点仍保留当前 Local Points，用来控制弧度。适合飞向目标、奖励飞行、吸入路径。", MessageType.Info);
-                DrawProperty("dynamicStartTransform", "Start Transform");
-                DrawProperty("dynamicEndTransform", "End Transform");
-                DrawProperty("dynamicUpdateInEditMode", "Update In Edit Mode");
-                DrawProperty("showDynamicBindingLabels", "Show Binding Labels");
+                DrawProperty("dynamicStartTransform", "起点 Transform");
+                DrawProperty("dynamicEndTransform", "终点 Transform");
+                DrawProperty("dynamicUpdateInEditMode", "编辑模式实时更新");
+                DrawProperty("showDynamicBindingLabels", "显示绑定标签");
 
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button("Bake Dynamic Ends To Points"))
+                    if (GUILayout.Button("烘焙动态端点到控制点"))
                     {
                         ModifySpline(spline, "Bake Dynamic Ends To Points", () => spline.ApplyDynamicBindingToLocalPoints());
                     }
-                    if (GUILayout.Button("Rebuild Distance Cache"))
+                    if (GUILayout.Button("重建距离缓存"))
                     {
                         Undo.RecordObject(spline, "Rebuild Distance Cache");
                         spline.RebuildDistanceCache();
@@ -110,17 +110,17 @@ namespace VFXTimelineSplineTool.EditorTools
             }
 
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Distance Based Progress", EditorStyles.boldLabel);
-            DrawProperty("distanceSampleResolution", "Distance Sample Resolution");
+            EditorGUILayout.LabelField("距离等速 Progress", EditorStyles.boldLabel);
+            DrawProperty("distanceSampleResolution", "距离采样精度");
 
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Path Data", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("路径数据", EditorStyles.boldLabel);
             if (spline.pathMode == VFXSplinePathMode.Bezier)
             {
-                DrawProperty("bezierPoints", "Bezier Points", true);
+                DrawProperty("bezierPoints", "Bezier 控制点", true);
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button("Convert Bezier To Catmull-Rom"))
+                    if (GUILayout.Button("转换 Bezier 为 Catmull-Rom"))
                         ModifySpline(spline, "Convert Bezier To Catmull-Rom", () =>
                         {
                             spline.ConvertBezierToCatmullRom();
@@ -130,10 +130,10 @@ namespace VFXTimelineSplineTool.EditorTools
             }
             else
             {
-                DrawProperty("localPoints", "Local Points", true);
+                DrawProperty("localPoints", "Local 控制点", true);
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button("Convert Catmull-Rom To Bezier"))
+                    if (GUILayout.Button("转换 Catmull-Rom 为 Bezier"))
                         ModifySpline(spline, "Convert Catmull-Rom To Bezier", () =>
                         {
                             spline.ConvertCatmullRomToBezier();
@@ -145,9 +145,9 @@ namespace VFXTimelineSplineTool.EditorTools
             serializedObject.ApplyModifiedProperties();
 
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Distance Info", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("Approx Length", spline.ApproxLength.ToString("F3"));
-            if (GUILayout.Button("Rebuild Distance Cache"))
+            EditorGUILayout.LabelField("距离信息", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("近似长度", spline.ApproxLength.ToString("F3"));
+            if (GUILayout.Button("重建距离缓存"))
             {
                 Undo.RecordObject(spline, "Rebuild Distance Cache");
                 spline.RebuildDistanceCache();
@@ -155,20 +155,20 @@ namespace VFXTimelineSplineTool.EditorTools
             }
 
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Path Tools", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("路径工具", EditorStyles.boldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Add Point")) ModifySpline(spline, "Add Point", () => spline.AddPoint());
-                if (GUILayout.Button("Insert Point")) ModifySpline(spline, "Insert Point", () => spline.InsertPoint(Mathf.Max(1, spline.GetActivePointCount() - 1)));
-                if (GUILayout.Button("Remove Last Point")) ModifySpline(spline, "Remove Last Point", () => spline.RemoveLastPoint());
+                if (GUILayout.Button("添加点")) ModifySpline(spline, "Add Point", () => spline.AddPoint());
+                if (GUILayout.Button("插入点")) ModifySpline(spline, "Insert Point", () => spline.InsertPoint(Mathf.Max(1, spline.GetActivePointCount() - 1)));
+                if (GUILayout.Button("删除末尾点")) ModifySpline(spline, "Remove Last Point", () => spline.RemoveLastPoint());
             }
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Reverse Path")) ModifySpline(spline, "Reverse Path", () => spline.ReversePath());
-                if (GUILayout.Button("Reset Path")) ModifySpline(spline, "Reset Path", () => spline.ResetPath());
-                if (GUILayout.Button("Flatten Y")) ModifySpline(spline, "Flatten Y", () => spline.FlattenY());
+                if (GUILayout.Button("反转路径")) ModifySpline(spline, "Reverse Path", () => spline.ReversePath());
+                if (GUILayout.Button("重置路径")) ModifySpline(spline, "Reset Path", () => spline.ResetPath());
+                if (GUILayout.Button("压平 Y")) ModifySpline(spline, "Flatten Y", () => spline.FlattenY());
             }
-            if (GUILayout.Button("Center Path To Object")) ModifySpline(spline, "Center Path To Object", () => spline.CenterPathToObject());
+            if (GUILayout.Button("路径居中到物体")) ModifySpline(spline, "Center Path To Object", () => spline.CenterPathToObject());
 
             DrawShapePresetTools(spline);
             DrawUserPresetTools(spline);
@@ -179,13 +179,49 @@ namespace VFXTimelineSplineTool.EditorTools
         private void DrawProperty(string name, string label, bool includeChildren = false)
         {
             SerializedProperty p = serializedObject.FindProperty(name);
-            if (p != null) EditorGUILayout.PropertyField(p, new GUIContent(label), includeChildren);
+            if (p != null) EditorGUILayout.PropertyField(p, BuildContent(label, name, p), includeChildren);
+        }
+
+        private static GUIContent BuildContent(string label, string propertyName, SerializedProperty property)
+        {
+            string tooltip = !string.IsNullOrEmpty(property.tooltip) ? property.tooltip : GetSplinePropertyTooltip(propertyName);
+            return new GUIContent(label, tooltip);
+        }
+
+        private static string GetSplinePropertyTooltip(string propertyName)
+        {
+            switch (propertyName)
+            {
+                case "pathColor": return "Scene 视图中绘制 Spline 路径线的颜色。";
+                case "progressMarkColor": return "Scene 视图中 Progress 百分比标记的颜色。";
+                case "lineWidth": return "Spline 路径线在 Scene 视图中的显示宽度。";
+                case "pointSize": return "控制点在 Scene 视图中的显示大小，也会影响点击区域的基础尺寸。";
+                case "resolution": return "绘制和采样曲线时使用的分段数量。值越高曲线越平滑，但 Scene 绘制开销也越高。";
+                case "alwaysShowPathInSceneView": return "开启后，即使没有选中此 Spline，也会在 Scene 视图中显示路径。";
+                case "showPointLabels": return "在 Scene 视图中显示控制点编号，方便定位和编辑。";
+                case "showAllPointHandles": return "开启后所有控制点都会显示 PositionHandle。关闭时只显示当前选中点的坐标轴，Scene 视图更干净。";
+                case "showProgressMarks": return "在路径上显示 0%、25%、50% 等 Progress 标记。";
+                case "progressMarkCount": return "Progress 标记数量。值为 4 时会显示 0%、25%、50%、75%、100%。";
+                case "progressMarksUseDistance": return "开启后，Progress 标记按路径实际距离均匀分布；关闭后按曲线参数均匀分布。";
+                case "showDirectionArrows": return "在路径上显示方向箭头，帮助判断运动方向。";
+                case "arrowCount": return "路径方向箭头的数量。";
+                case "arrowSize": return "路径方向箭头在 Scene 视图中的显示大小。";
+                case "enableDynamicStartEndBinding": return "开启后，路径第一个点会跟随起点 Transform，最后一个点会跟随终点 Transform。";
+                case "dynamicStartTransform": return "动态起点绑定对象。为空时使用 Local 控制点中的第一个点。";
+                case "dynamicEndTransform": return "动态终点绑定对象。为空时使用 Local 控制点中的最后一个点。";
+                case "dynamicUpdateInEditMode": return "编辑模式下也实时读取动态起点 / 终点 Transform。";
+                case "showDynamicBindingLabels": return "在 Scene 视图中显示动态端点绑定标签。";
+                case "distanceSampleResolution": return "距离等速 Progress 的采样精度。值越高等速效果越稳定，但重建缓存开销越高。";
+                case "bezierPoints": return "Bezier 模式下使用的控制点数据，包含位置、入/出手柄和手柄模式。";
+                case "localPoints": return "Catmull-Rom 模式下使用的 Local Space 控制点。";
+                default: return "";
+            }
         }
 
         private static void DrawPointEditModeControls(VFXSimpleSpline spline)
         {
             EditorGUI.BeginChangeCheck();
-            VFXSplinePointEditMode mode = (VFXSplinePointEditMode)EditorGUILayout.EnumPopup("Edit Mode", VFXSplinePointAPI.EditMode);
+            VFXSplinePointEditMode mode = DrawPointEditModePopup(VFXSplinePointAPI.EditMode);
             if (EditorGUI.EndChangeCheck())
             {
                 if (mode == VFXSplinePointEditMode.Points)
@@ -196,16 +232,34 @@ namespace VFXTimelineSplineTool.EditorTools
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Edit Points"))
+                if (GUILayout.Button("编辑控制点"))
                     VFXSplinePointAPI.EnterPointMode(spline);
-                if (GUILayout.Button("Move Spline Object"))
+                if (GUILayout.Button("移动 Spline 物体"))
                     VFXSplinePointAPI.EnterObjectMode();
             }
 
             EditorGUILayout.HelpBox(VFXSplinePointAPI.IsPointMode
-                ? "Point Mode: Unity Transform Gizmo is hidden and this spline stays editable even if you click empty Scene space. Press P in Scene View or Esc to return to Object Mode."
-                : "Object Mode: Unity Transform Gizmo is visible for moving the whole Spline object. Press P in Scene View or use Edit Points to edit control points.",
+                ? "Point Mode：隐藏 Unity Transform Gizmo，点击 Scene 空白处后仍保持当前 Spline 可编辑。在 Scene View 按 P 或 Esc 返回 Object Mode。"
+                : "Object Mode：显示 Unity Transform Gizmo，用来移动整条 Spline。在 Scene View 按 P，或点击“编辑控制点”进入点编辑。",
                 MessageType.None);
+        }
+
+        public static VFXSplinePointEditMode DrawPointEditModePopup(VFXSplinePointEditMode current)
+        {
+            string[] labels = { "物体模式", "控制点模式" };
+            string[] tooltips =
+            {
+                "显示 Unity Transform Gizmo，用来移动整条 Spline 物体。",
+                "隐藏 Unity Transform Gizmo，用来选择和移动 Spline 控制点。"
+            };
+            GUIContent[] contents =
+            {
+                new GUIContent(labels[0], tooltips[0]),
+                new GUIContent(labels[1], tooltips[1])
+            };
+            int index = current == VFXSplinePointEditMode.Points ? 1 : 0;
+            index = EditorGUILayout.Popup(new GUIContent("编辑模式", "切换移动整条 Spline 物体，或编辑 Spline 控制点。Scene View 中也可以按 P 切换。"), index, contents);
+            return index == 1 ? VFXSplinePointEditMode.Points : VFXSplinePointEditMode.Object;
         }
 
         private void DrawPathModeProperty(VFXSimpleSpline spline)
@@ -216,7 +270,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
             VFXSplinePathMode oldMode = (VFXSplinePathMode)pathModeProp.enumValueIndex;
             EditorGUI.BeginChangeCheck();
-            VFXSplinePathMode newMode = (VFXSplinePathMode)EditorGUILayout.EnumPopup(new GUIContent("Path Mode"), oldMode);
+            VFXSplinePathMode newMode = (VFXSplinePathMode)EditorGUILayout.EnumPopup(new GUIContent("路径模式", "选择路径的数学表示方式。Catmull-Rom 适合快速拉形状；Bezier 适合用手柄精细控制曲线。"), oldMode);
             if (!EditorGUI.EndChangeCheck() || newMode == oldMode)
                 return;
 
@@ -249,37 +303,37 @@ namespace VFXTimelineSplineTool.EditorTools
         private void DrawShapePresetTools(VFXSimpleSpline spline)
         {
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Shape Presets / 路径形状预设", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("路径形状预设 Shape Presets", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("一键生成常用路径形状。Apply 会覆盖当前 Local Points；Live Preview 开启后，参数变化会实时覆盖当前路径，建议复制路径后使用。", MessageType.Info);
 
             EditorGUI.BeginChangeCheck();
 
-            selectedShapePreset = (ShapePreset)EditorGUILayout.EnumPopup(new GUIContent("Shape Preset", "选择要生成的路径形状。"), selectedShapePreset);
-            presetScale = EditorGUILayout.FloatField(new GUIContent("Scale", "整体缩放。"), Mathf.Max(0.01f, presetScale));
-            presetWidth = EditorGUILayout.FloatField(new GUIContent("Width", "横向宽度，主要用于 Line / S / Wave / Rectangle / Infinity 等形状。"), Mathf.Max(0.01f, presetWidth));
-            presetHeight = EditorGUILayout.FloatField(new GUIContent("Height", "纵向高度，主要用于 S / Wave / Rectangle / Ellipse / Infinity 等形状。"), Mathf.Max(0.01f, presetHeight));
-            presetPointCount = EditorGUILayout.IntSlider(new GUIContent("Point Count", "生成点数量。圆、波浪、螺旋等形状建议 8 到 24。"), presetPointCount, 4, 64);
-            presetWaveCount = EditorGUILayout.IntSlider(new GUIContent("Wave Count", "Wave / Zigzag 的波段数量。"), presetWaveCount, 1, 8);
-            presetSpiralTurns = EditorGUILayout.Slider(new GUIContent("Spiral Turns", "螺旋圈数。"), presetSpiralTurns, 0.5f, 5f);
-            presetRotationY = EditorGUILayout.FloatField(new GUIContent("Rotation Y", "绕 Y 轴旋转预设形状。"), presetRotationY);
-            presetOffset = EditorGUILayout.Vector3Field(new GUIContent("Local Offset", "生成后在 Spline 本地空间中的偏移。"), presetOffset);
-            livePreviewShapePreset = EditorGUILayout.Toggle(new GUIContent("Live Preview Shape Preset", "开启后，修改上方参数会立即刷新当前路径。注意：这会持续覆盖 Local Points。"), livePreviewShapePreset);
+            selectedShapePreset = (ShapePreset)EditorGUILayout.EnumPopup(new GUIContent("形状预设", "选择要生成的路径形状。"), selectedShapePreset);
+            presetScale = EditorGUILayout.FloatField(new GUIContent("整体缩放", "整体缩放。"), Mathf.Max(0.01f, presetScale));
+            presetWidth = EditorGUILayout.FloatField(new GUIContent("宽度", "横向宽度，主要用于 Line / S / Wave / Rectangle / Infinity 等形状。"), Mathf.Max(0.01f, presetWidth));
+            presetHeight = EditorGUILayout.FloatField(new GUIContent("高度", "纵向高度，主要用于 S / Wave / Rectangle / Ellipse / Infinity 等形状。"), Mathf.Max(0.01f, presetHeight));
+            presetPointCount = EditorGUILayout.IntSlider(new GUIContent("控制点数量", "生成点数量。圆、波浪、螺旋等形状建议 8 到 24。"), presetPointCount, 4, 64);
+            presetWaveCount = EditorGUILayout.IntSlider(new GUIContent("波段数量", "Wave / Zigzag 的波段数量。"), presetWaveCount, 1, 8);
+            presetSpiralTurns = EditorGUILayout.Slider(new GUIContent("螺旋圈数", "Spiral 形状的圈数。"), presetSpiralTurns, 0.5f, 5f);
+            presetRotationY = EditorGUILayout.FloatField(new GUIContent("Y 轴旋转", "绕 Y 轴旋转预设形状。"), presetRotationY);
+            presetOffset = EditorGUILayout.Vector3Field(new GUIContent("Local 偏移", "生成后在 Spline 本地空间中的偏移。"), presetOffset);
+            livePreviewShapePreset = EditorGUILayout.Toggle(new GUIContent("实时预览形状预设", "开启后，修改上方参数会立即刷新当前路径。注意：这会持续覆盖 Local Points。"), livePreviewShapePreset);
 
             bool shapeParamChanged = EditorGUI.EndChangeCheck();
 
             if (livePreviewShapePreset)
             {
-                EditorGUILayout.HelpBox("Live Preview 已开启：修改预设参数会实时覆盖当前 Local Points。正式路径建议先复制一份再试。", MessageType.Warning);
+                EditorGUILayout.HelpBox("实时预览已开启：修改预设参数会实时覆盖当前 Local Points。正式路径建议先复制一份再试。", MessageType.Warning);
                 if (shapeParamChanged)
                     ApplyShapePresetToSpline(spline, "Live Preview Shape Preset");
             }
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Apply Shape Preset / 应用形状预设"))
+                if (GUILayout.Button("应用形状预设"))
                     ApplyShapePresetToSpline(spline, "Apply Shape Preset");
 
-                if (GUILayout.Button("Reset Preset Params / 重置参数"))
+                if (GUILayout.Button("重置预设参数"))
                 {
                     presetScale = 3f;
                     presetWidth = 6f;
@@ -516,20 +570,20 @@ namespace VFXTimelineSplineTool.EditorTools
         private void DrawUserPresetTools(VFXSimpleSpline spline)
         {
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("User Path Presets / 自定义路径预设", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("自定义路径预设 User Path Presets", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("把当前手调好的 Local Points 保存为 .asset 资源，方便下次复用，也方便提交到 SVN/Git 给团队共享。", MessageType.Info);
 
-            userPresetName = EditorGUILayout.TextField(new GUIContent("Preset Name", "保存自定义路径预设时使用的文件名。"), userPresetName);
-            selectedUserPreset = (VFXUserPathPreset)EditorGUILayout.ObjectField(new GUIContent("User Preset", "选择已经保存的自定义路径预设资源。"), selectedUserPreset, typeof(VFXUserPathPreset), false);
-            saveDisplaySettingsWithPreset = EditorGUILayout.Toggle(new GUIContent("Save Display Settings", "开启后，保存路径点的同时保存路径颜色、线宽、采样精度等显示参数。一般只保存 Local Points 即可。"), saveDisplaySettingsWithPreset);
+            userPresetName = EditorGUILayout.TextField(new GUIContent("预设名称", "保存自定义路径预设时使用的文件名。"), userPresetName);
+            selectedUserPreset = (VFXUserPathPreset)EditorGUILayout.ObjectField(new GUIContent("自定义路径预设", "选择已经保存的自定义路径预设资源。"), selectedUserPreset, typeof(VFXUserPathPreset), false);
+            saveDisplaySettingsWithPreset = EditorGUILayout.Toggle(new GUIContent("同时保存显示设置", "开启后，保存路径点的同时保存路径颜色、线宽、采样精度等显示参数。一般只保存 Local Points 即可。"), saveDisplaySettingsWithPreset);
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Save Current Path As Preset"))
+                if (GUILayout.Button("保存当前路径为预设"))
                     SaveCurrentPathAsPreset(spline);
 
                 EditorGUI.BeginDisabledGroup(selectedUserPreset == null);
-                if (GUILayout.Button("Load Selected Preset"))
+                if (GUILayout.Button("加载选中预设"))
                     LoadSelectedPreset(spline);
                 EditorGUI.EndDisabledGroup();
             }
@@ -537,11 +591,11 @@ namespace VFXTimelineSplineTool.EditorTools
             using (new EditorGUILayout.HorizontalScope())
             {
                 EditorGUI.BeginDisabledGroup(selectedUserPreset == null);
-                if (GUILayout.Button("Delete Selected Preset"))
+                if (GUILayout.Button("删除选中预设"))
                     DeleteSelectedPreset();
                 EditorGUI.EndDisabledGroup();
 
-                if (GUILayout.Button("Refresh Presets"))
+                if (GUILayout.Button("刷新预设列表"))
                     AssetDatabase.Refresh();
             }
 
@@ -607,7 +661,7 @@ namespace VFXTimelineSplineTool.EditorTools
             string path = AssetDatabase.GetAssetPath(selectedUserPreset);
             if (string.IsNullOrEmpty(path)) return;
 
-            bool ok = EditorUtility.DisplayDialog("Delete User Path Preset", "确认删除这个自定义路径预设？\n" + path, "Delete", "Cancel");
+            bool ok = EditorUtility.DisplayDialog("删除自定义路径预设", "确认删除这个自定义路径预设？\n" + path, "删除", "取消");
             if (!ok) return;
 
             selectedUserPreset = null;
@@ -619,24 +673,24 @@ namespace VFXTimelineSplineTool.EditorTools
         private void DrawAnchorTools(VFXSimpleSpline spline)
         {
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Anchor Tools / 特效挂点工具", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("特效挂点工具 Anchor Tools", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("用于快速在当前路径上创建 VFX Spline Anchor。粒子、面片、爆点可以挂到 Anchor 子物体下，再用 Timeline 原生 Control Track / Activation Track 控制播放。", MessageType.Info);
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Create 0%")) CreateAnchorAtProgress(spline, 0f);
-                if (GUILayout.Button("Create 25%")) CreateAnchorAtProgress(spline, 0.25f);
-                if (GUILayout.Button("Create 50%")) CreateAnchorAtProgress(spline, 0.5f);
-                if (GUILayout.Button("Create 75%")) CreateAnchorAtProgress(spline, 0.75f);
-                if (GUILayout.Button("Create 100%")) CreateAnchorAtProgress(spline, 1f);
+                if (GUILayout.Button("创建 0%")) CreateAnchorAtProgress(spline, 0f);
+                if (GUILayout.Button("创建 25%")) CreateAnchorAtProgress(spline, 0.25f);
+                if (GUILayout.Button("创建 50%")) CreateAnchorAtProgress(spline, 0.5f);
+                if (GUILayout.Button("创建 75%")) CreateAnchorAtProgress(spline, 0.75f);
+                if (GUILayout.Button("创建 100%")) CreateAnchorAtProgress(spline, 1f);
             }
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                batchAnchorCount = EditorGUILayout.IntSlider("Batch Count", batchAnchorCount, 2, 30);
+                batchAnchorCount = EditorGUILayout.IntSlider(new GUIContent("批量数量", "均分创建 Anchor 的数量。"), batchAnchorCount, 2, 30);
             }
 
-            if (GUILayout.Button("Create Evenly Spaced Anchors / 均分创建 Anchor"))
+            if (GUILayout.Button("均分创建 Anchor"))
                 CreateEvenlySpacedAnchors(spline, batchAnchorCount);
         }
 
@@ -695,7 +749,7 @@ namespace VFXTimelineSplineTool.EditorTools
         private void DrawPointTools(VFXSimpleSpline spline)
         {
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Point Tools", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("控制点工具", EditorStyles.boldLabel);
             int pointCount = spline.GetActivePointCount();
             if (pointCount <= 0) return;
 
@@ -705,15 +759,15 @@ namespace VFXTimelineSplineTool.EditorTools
             {
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    EditorGUILayout.LabelField("Point " + i, GUILayout.Width(80));
-                    if (GUILayout.Button("Insert After"))
+                    EditorGUILayout.LabelField("点 " + i, GUILayout.Width(80));
+                    if (GUILayout.Button("在后方插入"))
                     {
                         int index = i + 1;
                         ModifySpline(spline, "Insert Point After", () => spline.InsertPoint(index));
                         break;
                     }
                     EditorGUI.BeginDisabledGroup(pointCount <= 2);
-                    if (GUILayout.Button("Delete"))
+                    if (GUILayout.Button("删除"))
                     {
                         int index = i;
                         ModifySpline(spline, "Delete Point", () => spline.RemovePointAt(index));
@@ -736,10 +790,10 @@ namespace VFXTimelineSplineTool.EditorTools
             VFXBezierPoint point = spline.bezierPoints[selected];
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Selected Bezier Point " + selected, EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("当前 Bezier 点 " + selected, EditorStyles.boldLabel);
 
             EditorGUI.BeginChangeCheck();
-            VFXBezierHandleMode mode = (VFXBezierHandleMode)EditorGUILayout.EnumPopup("Handle Mode", point.handleMode);
+            VFXBezierHandleMode mode = (VFXBezierHandleMode)EditorGUILayout.EnumPopup(new GUIContent("手柄模式", "控制当前 Bezier 点入/出手柄的联动方式。"), point.handleMode);
             if (EditorGUI.EndChangeCheck())
             {
                 Undo.RecordObject(spline, "Change Bezier Handle Mode");
@@ -750,36 +804,36 @@ namespace VFXTimelineSplineTool.EditorTools
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Free Handles"))
+                if (GUILayout.Button("自由手柄"))
                     SetSelectedBezierHandleMode(spline, selected, VFXBezierHandleMode.Free);
 
-                if (GUILayout.Button("Aligned"))
+                if (GUILayout.Button("对齐"))
                     SetSelectedBezierHandleMode(spline, selected, VFXBezierHandleMode.Aligned);
 
-                if (GUILayout.Button("Mirrored"))
+                if (GUILayout.Button("镜像"))
                     SetSelectedBezierHandleMode(spline, selected, VFXBezierHandleMode.Mirrored);
 
-                if (GUILayout.Button("Auto Smooth"))
+                if (GUILayout.Button("自动平滑"))
                     SetSelectedBezierHandleMode(spline, selected, VFXBezierHandleMode.AutoSmooth);
             }
 
-            EditorGUILayout.LabelField("Point Type Presets", EditorStyles.miniBoldLabel);
+            EditorGUILayout.LabelField("点类型预设", EditorStyles.miniBoldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Corner"))
+                if (GUILayout.Button("拐角"))
                     ApplySelectedBezierPointPreset(spline, selected, VFXBezierPointPreset.Corner);
 
-                if (GUILayout.Button("Smooth"))
+                if (GUILayout.Button("平滑"))
                     ApplySelectedBezierPointPreset(spline, selected, VFXBezierPointPreset.Smooth);
 
-                if (GUILayout.Button("Symmetric"))
+                if (GUILayout.Button("对称"))
                     ApplySelectedBezierPointPreset(spline, selected, VFXBezierPointPreset.Symmetric);
 
-                if (GUILayout.Button("Auto"))
+                if (GUILayout.Button("自动"))
                     ApplySelectedBezierPointPreset(spline, selected, VFXBezierPointPreset.AutoSmooth);
             }
 
-            if (GUILayout.Button("Auto Smooth All Bezier Points"))
+            if (GUILayout.Button("自动平滑全部 Bezier 点"))
             {
                 Undo.RecordObject(spline, "Auto Smooth All Bezier Points");
                 spline.AutoSmoothAllBezierPoints();
@@ -856,9 +910,8 @@ namespace VFXTimelineSplineTool.EditorTools
                     continue;
                 }
 
-                if (!spline.alwaysShowPathInSceneView) continue;
-                if (Selection.activeGameObject == spline.gameObject) continue;
-                DrawSpline(spline, false);
+                if (!spline.alwaysShowPathInSceneView && Selection.activeGameObject != spline.gameObject) continue;
+                DrawSpline(spline, Selection.activeGameObject == spline.gameObject);
             }
         }
 
@@ -1040,7 +1093,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 return;
 
             GenericMenu menu = new GenericMenu();
-            menu.AddItem(new GUIContent("Insert Bezier Point Here"), false, () =>
+            menu.AddItem(new GUIContent("在这里插入 Bezier 点"), false, () =>
             {
                 Undo.RecordObject(spline, "Insert Bezier Point");
                 int inserted = spline.InsertBezierPointAtRawProgress(rawProgress);
@@ -1119,8 +1172,8 @@ namespace VFXTimelineSplineTool.EditorTools
             EditorUtility.SetDirty(spline);
 
             GenericMenu menu = new GenericMenu();
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.AutoSmooth, "Auto Smooth");
-            menu.AddItem(new GUIContent("Auto Smooth All"), false, () =>
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.AutoSmooth, "自动平滑");
+            menu.AddItem(new GUIContent("自动平滑全部"), false, () =>
             {
                 Undo.RecordObject(spline, "Auto Smooth All Bezier Points");
                 spline.AutoSmoothAllBezierPoints();
@@ -1128,17 +1181,17 @@ namespace VFXTimelineSplineTool.EditorTools
                 SceneView.RepaintAll();
             });
             menu.AddSeparator("");
-            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Corner, "Point Type/Corner");
-            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Smooth, "Point Type/Smooth");
-            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Symmetric, "Point Type/Symmetric");
+            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Corner, "点类型/拐角");
+            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Smooth, "点类型/平滑");
+            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Symmetric, "点类型/对称");
             menu.AddSeparator("");
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Free, "Handle Mode/Free Handles");
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Aligned, "Handle Mode/Aligned");
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Mirrored, "Handle Mode/Mirrored");
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Free, "手柄模式/自由手柄");
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Aligned, "手柄模式/对齐");
+            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Mirrored, "手柄模式/镜像");
             menu.AddSeparator("");
             if (spline.GetActivePointCount() > 2)
             {
-                menu.AddItem(new GUIContent("Delete This Point"), false, () =>
+                menu.AddItem(new GUIContent("删除当前点"), false, () =>
                 {
                     Undo.RecordObject(spline, "Delete Bezier Point");
                     spline.RemovePointAt(index);
@@ -1149,7 +1202,7 @@ namespace VFXTimelineSplineTool.EditorTools
             }
             else
             {
-                menu.AddDisabledItem(new GUIContent("Delete This Point"));
+                menu.AddDisabledItem(new GUIContent("删除当前点"));
             }
             e.Use();
             suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
@@ -1203,9 +1256,9 @@ namespace VFXTimelineSplineTool.EditorTools
             Handles.BeginGUI();
             GUILayout.BeginArea(rect, EditorStyles.toolbar);
             GUILayout.BeginHorizontal();
-            DrawBezierModeButton(spline, index, VFXBezierHandleMode.Free, "Free");
-            DrawBezierModeButton(spline, index, VFXBezierHandleMode.Aligned, "Align");
-            DrawBezierModeButton(spline, index, VFXBezierHandleMode.Mirrored, "Mirror");
+            DrawBezierModeButton(spline, index, VFXBezierHandleMode.Free, "自由");
+            DrawBezierModeButton(spline, index, VFXBezierHandleMode.Aligned, "对齐");
+            DrawBezierModeButton(spline, index, VFXBezierHandleMode.Mirrored, "镜像");
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
             Handles.EndGUI();

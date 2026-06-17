@@ -23,64 +23,64 @@ namespace VFXTimelineSplineTool.EditorTools
 
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("Spline", EditorStyles.boldLabel);
-            DrawProperty("spline", "Spline");
+            EditorGUILayout.LabelField("Spline 路径", EditorStyles.boldLabel);
+            DrawProperty("spline", "Spline 路径");
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Anchor Mode", EditorStyles.boldLabel);
-            DrawProperty("anchorMode", "Anchor Mode");
+            EditorGUILayout.LabelField("Anchor 模式", EditorStyles.boldLabel);
+            DrawProperty("anchorMode", "Anchor 模式");
 
             VFXSplineAnchorMode mode = (VFXSplineAnchorMode)serializedObject.FindProperty("anchorMode").enumValueIndex;
             if (mode == VFXSplineAnchorMode.FixedProgress)
             {
                 EditorGUILayout.Space(2);
-                EditorGUILayout.LabelField("Fixed Progress", EditorStyles.boldLabel);
-                DrawProperty("progress", "Progress");
+                EditorGUILayout.LabelField("固定 Progress", EditorStyles.boldLabel);
+                DrawProperty("progress", "Progress 进度");
             }
             else
             {
                 EditorGUILayout.Space(2);
-                EditorGUILayout.LabelField("Follow Animator Progress", EditorStyles.boldLabel);
+                EditorGUILayout.LabelField("跟随 Animator Progress", EditorStyles.boldLabel);
                 DrawProperty("sourceAnimator", "Source Animator");
-                DrawProperty("autoUseSourceSpline", "Auto Use Source Spline");
-                DrawProperty("progressOffset", "Progress Offset");
-                DrawProperty("progressWrapMode", "Progress Wrap Mode");
+                DrawProperty("autoUseSourceSpline", "自动使用 Source Spline");
+                DrawProperty("progressOffset", "Progress 偏移");
+                DrawProperty("progressWrapMode", "Progress 循环模式");
                 EditorGUILayout.HelpBox("最终进度 = Source Animator 当前进度 + Progress Offset。\n例如：Offset = -0.05 表示落后运动物体 5%；Offset = 0.10 表示提前 10%。", MessageType.None);
             }
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Progress Evaluation", EditorStyles.boldLabel);
-            DrawProperty("useDistanceBasedProgress", "Use Distance Based Progress");
-            DrawProperty("reverse", "Reverse");
+            EditorGUILayout.LabelField("Progress 计算", EditorStyles.boldLabel);
+            DrawProperty("useDistanceBasedProgress", "使用距离等速 Progress");
+            DrawProperty("reverse", "反向");
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Position", EditorStyles.boldLabel);
-            DrawProperty("followPosition", "Follow Position");
-            DrawProperty("positionOffset", "Position Offset");
+            EditorGUILayout.LabelField("位置", EditorStyles.boldLabel);
+            DrawProperty("followPosition", "跟随位置");
+            DrawProperty("positionOffset", "位置偏移");
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Rotation", EditorStyles.boldLabel);
-            DrawProperty("rotationMode", "Rotation Mode");
-            DrawProperty("forwardAxis", "Forward Axis");
-            DrawProperty("rotationOffsetEuler", "Rotation Offset Euler");
-            DrawProperty("fallbackForward", "Fallback Forward");
+            EditorGUILayout.LabelField("旋转", EditorStyles.boldLabel);
+            DrawProperty("rotationMode", "旋转模式");
+            DrawProperty("forwardAxis", "前向轴");
+            DrawProperty("rotationOffsetEuler", "旋转偏移 Euler");
+            DrawProperty("fallbackForward", "备用前向");
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Editor Preview", EditorStyles.boldLabel);
-            DrawProperty("previewInEditMode", "Preview In Edit Mode");
-            DrawProperty("applyOnValidate", "Apply On Validate");
-            DrawProperty("showSceneLabel", "Show Scene Label");
-            DrawProperty("label", "Label");
-            DrawProperty("labelColor", "Label Color");
-            DrawProperty("gizmoSize", "Gizmo Size");
+            EditorGUILayout.LabelField("编辑器预览", EditorStyles.boldLabel);
+            DrawProperty("previewInEditMode", "编辑模式预览");
+            DrawProperty("applyOnValidate", "参数变化时自动应用");
+            DrawProperty("showSceneLabel", "显示 Scene 标签");
+            DrawProperty("label", "标签文本");
+            DrawProperty("labelColor", "标签颜色");
+            DrawProperty("gizmoSize", "Gizmo 大小");
 
             serializedObject.ApplyModifiedProperties();
 
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Current Info", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("Active Spline", anchor.GetActiveSpline() != null ? anchor.GetActiveSpline().name : "None");
-            EditorGUILayout.LabelField("Raw Progress", anchor.GetRawAnchorProgress().ToString("F3"));
-            EditorGUILayout.LabelField("Effective Progress", anchor.GetEffectiveProgress().ToString("F3"));
+            EditorGUILayout.LabelField("当前信息", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("当前 Spline", anchor.GetActiveSpline() != null ? anchor.GetActiveSpline().name : "无");
+            EditorGUILayout.LabelField("原始 Progress", anchor.GetRawAnchorProgress().ToString("F3"));
+            EditorGUILayout.LabelField("最终 Progress", anchor.GetEffectiveProgress().ToString("F3"));
             if (anchor.anchorMode == VFXSplineAnchorMode.FollowAnimatorProgress && anchor.sourceAnimator != null)
                 EditorGUILayout.LabelField("Source Progress", anchor.GetSourceEvaluatedProgress().ToString("F3"));
 
@@ -88,26 +88,26 @@ namespace VFXTimelineSplineTool.EditorTools
             EditorGUILayout.LabelField("Progress 快捷设置", EditorStyles.boldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Set 0%")) SetEffectiveProgress(anchor, 0f);
-                if (GUILayout.Button("Set 25%")) SetEffectiveProgress(anchor, 0.25f);
-                if (GUILayout.Button("Set 50%")) SetEffectiveProgress(anchor, 0.5f);
-                if (GUILayout.Button("Set 75%")) SetEffectiveProgress(anchor, 0.75f);
-                if (GUILayout.Button("Set 100%")) SetEffectiveProgress(anchor, 1f);
+                if (GUILayout.Button("设为 0%")) SetEffectiveProgress(anchor, 0f);
+                if (GUILayout.Button("设为 25%")) SetEffectiveProgress(anchor, 0.25f);
+                if (GUILayout.Button("设为 50%")) SetEffectiveProgress(anchor, 0.5f);
+                if (GUILayout.Button("设为 75%")) SetEffectiveProgress(anchor, 0.75f);
+                if (GUILayout.Button("设为 100%")) SetEffectiveProgress(anchor, 1f);
             }
 
             if (anchor.anchorMode == VFXSplineAnchorMode.FollowAnimatorProgress)
             {
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button("Offset -10%")) SetOffset(anchor, -0.10f);
-                    if (GUILayout.Button("Offset -5%")) SetOffset(anchor, -0.05f);
-                    if (GUILayout.Button("Offset 0")) SetOffset(anchor, 0f);
-                    if (GUILayout.Button("Offset +5%")) SetOffset(anchor, 0.05f);
-                    if (GUILayout.Button("Offset +10%")) SetOffset(anchor, 0.10f);
+                    if (GUILayout.Button("偏移 -10%")) SetOffset(anchor, -0.10f);
+                    if (GUILayout.Button("偏移 -5%")) SetOffset(anchor, -0.05f);
+                    if (GUILayout.Button("偏移 0")) SetOffset(anchor, 0f);
+                    if (GUILayout.Button("偏移 +5%")) SetOffset(anchor, 0.05f);
+                    if (GUILayout.Button("偏移 +10%")) SetOffset(anchor, 0.10f);
                 }
             }
 
-            if (GUILayout.Button("Apply Current Progress"))
+            if (GUILayout.Button("应用当前 Progress"))
             {
                 Undo.RecordObject(anchor.transform, "Apply Spline Anchor");
                 anchor.ApplyAnchor();
@@ -115,7 +115,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 SceneView.RepaintAll();
             }
 
-            if (GUILayout.Button("Ping Spline"))
+            if (GUILayout.Button("定位 Spline"))
             {
                 VFXSimpleSpline activeSpline = anchor.GetActiveSpline();
                 if (activeSpline != null)
@@ -131,7 +131,42 @@ namespace VFXTimelineSplineTool.EditorTools
         private void DrawProperty(string name, string label)
         {
             SerializedProperty p = serializedObject.FindProperty(name);
-            if (p != null) EditorGUILayout.PropertyField(p, new GUIContent(label));
+            if (p != null) EditorGUILayout.PropertyField(p, BuildContent(label, name, p));
+        }
+
+        private static GUIContent BuildContent(string label, string propertyName, SerializedProperty property)
+        {
+            string tooltip = !string.IsNullOrEmpty(property.tooltip) ? property.tooltip : GetAnchorPropertyTooltip(propertyName);
+            return new GUIContent(label, tooltip);
+        }
+
+        private static string GetAnchorPropertyTooltip(string propertyName)
+        {
+            switch (propertyName)
+            {
+                case "spline": return "Anchor 所依附的 Spline 路径。";
+                case "anchorMode": return "Fixed Progress 使用固定路径进度；Follow Animator Progress 会跟随 Source Animator 的进度。";
+                case "progress": return "Anchor 在路径上的固定进度，0 为起点，1 为终点。";
+                case "sourceAnimator": return "要跟随的 VFXSplineAnimator。Anchor 会读取它的 Progress。";
+                case "autoUseSourceSpline": return "开启后，如果本 Anchor 没有直接指定 Spline，会自动使用 Source Animator 上的 Spline。";
+                case "progressOffset": return "在 Source Animator Progress 基础上额外加减的偏移。负数表示落后，正数表示提前。";
+                case "progressWrapMode": return "Progress 超出 0-1 后的处理方式：Clamp 限制、Loop 循环、PingPong 往返。";
+                case "useDistanceBasedProgress": return "开启后按路径实际距离计算 Progress，让挂点沿路径更均匀分布。";
+                case "reverse": return "反向读取 Progress，让 0 对应终点、1 对应起点。";
+                case "followPosition": return "开启后 Anchor 的位置会跟随 Spline 上的点。";
+                case "positionOffset": return "在路径点位置基础上额外叠加的世界坐标偏移。";
+                case "rotationMode": return "是否根据路径切线自动旋转 Anchor。";
+                case "forwardAxis": return "指定 Anchor 哪根本地轴作为前进方向。";
+                case "rotationOffsetEuler": return "在路径方向旋转之后额外叠加的 Euler 角偏移。";
+                case "fallbackForward": return "路径切线过短时使用的备用前向方向。";
+                case "previewInEditMode": return "编辑模式下实时预览 Anchor 在路径上的位置。";
+                case "applyOnValidate": return "Inspector 参数变化时立即应用 Anchor。";
+                case "showSceneLabel": return "在 Scene 视图中显示 Anchor 名称和进度标签。";
+                case "label": return "Scene 标签显示的文本。为空时使用物体名。";
+                case "labelColor": return "Scene 标签、点和方向箭头的颜色。";
+                case "gizmoSize": return "Anchor 在 Scene 视图中的点和方向箭头大小。";
+                default: return "";
+            }
         }
 
         private static void SetEffectiveProgress(VFXSplineAnchor anchor, float value)
@@ -156,59 +191,94 @@ namespace VFXTimelineSplineTool.EditorTools
         private void DrawBakeTools(VFXSplineAnchor anchor)
         {
             EditorGUILayout.Space(10);
-            EditorGUILayout.LabelField("Bake Anchor To AnimationClip / 烘焙挂点", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("烘焙 Anchor 为 AnimationClip", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("把当前 Anchor 的路径挂点结果烘焙成 Unity 原生 Transform AnimationClip。Follow Animator Progress 模式会优先按 Source Animator 的 Bake Progress Source 采样进度。", MessageType.Info);
 
             serializedObject.Update();
-            DrawProperty("bakeFrameRate", "Frame Rate");
-            DrawProperty("bakeDuration", "Duration");
-            DrawProperty("bakePosition", "Bake Position");
-            DrawProperty("bakeRotation", "Bake Rotation");
-            DrawProperty("bakeChildren", "Bake Children");
+            DrawProperty("bakeFrameRate", "帧率 Frame Rate");
+            DrawProperty("bakeDuration", "时长 Duration");
+            DrawBakeDurationShortcuts(anchor);
+            DrawProperty("bakePosition", "烘焙位置");
+            DrawProperty("bakeRotation", "烘焙旋转");
+            DrawProperty("bakeChildren", "烘焙子物体");
             if (serializedObject.FindProperty("bakeChildren").boolValue)
             {
-                DrawProperty("bakeChildScale", "Bake Child Scale");
-                DrawProperty("bakeChildAnimationClip", "Child Animation Clip");
+                DrawProperty("bakeChildScale", "烘焙子物体缩放");
+                DrawProperty("bakeChildAnimationClip", "子物体 Animation Clip");
                 if (serializedObject.FindProperty("bakeChildAnimationClip").objectReferenceValue != null)
                 {
-                    DrawProperty("bakeChildAnimationUseNormalizedTime", "Use Normalized Child Time");
+                    DrawProperty("bakeChildAnimationUseNormalizedTime", "使用归一化子动画时间");
                     if (!serializedObject.FindProperty("bakeChildAnimationUseNormalizedTime").boolValue)
-                        DrawProperty("bakeChildAnimationLoop", "Loop Child Animation");
+                        DrawProperty("bakeChildAnimationLoop", "循环子动画");
                 }
                 else
                 {
-                    DrawProperty("bakeAutoSampleChildAnimations", "Auto Sample Child Animations");
+                    DrawProperty("bakeAutoSampleChildAnimations", "自动采样子物体动画");
                     if (serializedObject.FindProperty("bakeAutoSampleChildAnimations").boolValue)
                     {
-                        DrawProperty("bakeChildAnimationUseNormalizedTime", "Use Normalized Child Time");
+                        DrawProperty("bakeChildAnimationUseNormalizedTime", "使用归一化子动画时间");
                         if (!serializedObject.FindProperty("bakeChildAnimationUseNormalizedTime").boolValue)
-                            DrawProperty("bakeChildAnimationLoop", "Loop Child Animation");
+                            DrawProperty("bakeChildAnimationLoop", "循环子动画");
                     }
                 }
             }
             if (anchor.anchorMode == VFXSplineAnchorMode.FollowAnimatorProgress)
-                DrawProperty("bakeUseSourceAnimatorProgress", "Use Source Animator Progress Source");
-            DrawProperty("bakeSaveFolder", "Save Folder");
-            DrawProperty("bakeClipName", "Clip Name");
-            DrawProperty("bakeAddAnimatorIfMissing", "Add Animator If Missing");
+                DrawProperty("bakeUseSourceAnimatorProgress", "使用 Source Animator 的 Progress 来源");
+            DrawProperty("bakeSaveFolder", "保存目录");
+            DrawProperty("bakeClipName", "Clip 名称");
+            DrawProperty("bakeAddAnimatorIfMissing", "缺少 Animator 时自动添加");
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Bake Simplify / 关键帧简化", EditorStyles.boldLabel);
-            DrawProperty("bakeKeyframeStep", "Keyframe Step");
-            DrawProperty("bakeAlwaysKeyStartAndEnd", "Always Key Start And End");
-            DrawProperty("bakeOptimizeCurves", "Optimize Curves");
+            EditorGUILayout.LabelField("烘焙关键帧简化", EditorStyles.boldLabel);
+            DrawProperty("bakeKeyframeStep", "关键帧间隔 Keyframe Step");
+            DrawProperty("bakeAlwaysKeyStartAndEnd", "强制记录首尾帧");
+            DrawProperty("bakeOptimizeCurves", "优化曲线");
             if (serializedObject.FindProperty("bakeOptimizeCurves").boolValue)
             {
-                DrawProperty("bakePositionTolerance", "Position Tolerance");
-                DrawProperty("bakeRotationTolerance", "Rotation Tolerance");
+                DrawProperty("bakePositionTolerance", "位置误差阈值");
+                DrawProperty("bakeRotationTolerance", "旋转误差阈值");
             }
             serializedObject.ApplyModifiedProperties();
 
-            bool hasBakeChannel = anchor.bakePosition || anchor.bakeRotation || (anchor.bakeChildren && anchor.bakeChildScale);
-            using (new EditorGUI.DisabledScope(anchor.GetActiveSpline() == null || !hasBakeChannel))
+            string preflightMessage;
+            MessageType preflightType;
+            bool canBake = GetAnchorBakePreflight(anchor, out preflightMessage, out preflightType);
+            EditorGUILayout.HelpBox(preflightMessage, preflightType);
+
+            using (new EditorGUI.DisabledScope(!canBake))
             {
-                if (GUILayout.Button("Bake Anchor To AnimationClip"))
+                if (GUILayout.Button("烘焙 Anchor 为 AnimationClip"))
                     BakeAnchorToAnimationClip(anchor);
+            }
+        }
+
+        private void DrawBakeDurationShortcuts(VFXSplineAnchor anchor)
+        {
+            if (anchor == null)
+                return;
+
+            SerializedProperty durationProp = serializedObject.FindProperty("bakeDuration");
+            if (durationProp == null)
+                return;
+
+            bool hasSourceDuration = anchor.anchorMode == VFXSplineAnchorMode.FollowAnimatorProgress && anchor.sourceAnimator != null;
+            bool hasChildClipDuration = anchor.bakeChildren && anchor.bakeChildAnimationClip != null;
+            if (!hasSourceDuration && !hasChildClipDuration)
+                return;
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(!hasSourceDuration))
+                {
+                    if (GUILayout.Button("使用 Source Animator 时长"))
+                        durationProp.floatValue = Mathf.Max(0.01f, anchor.sourceAnimator.bakeDuration);
+                }
+
+                using (new EditorGUI.DisabledScope(!hasChildClipDuration))
+                {
+                    if (GUILayout.Button("使用子 Clip 时长"))
+                        durationProp.floatValue = Mathf.Max(0.01f, anchor.bakeChildAnimationClip.length);
+                }
             }
         }
 
@@ -250,6 +320,9 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             public string componentJson;
             public Dictionary<Transform, TransformSnapshot> hierarchyTransforms;
+            public VFXSimpleSpline spline;
+            public VFXSplineAnimator sourceAnimator;
+            public AnimationClip bakeChildAnimationClip;
         }
 
         private static void BakeAnchorToAnimationClip(VFXSplineAnchor anchor)
@@ -257,7 +330,7 @@ namespace VFXTimelineSplineTool.EditorTools
             VFXSimpleSpline activeSpline = anchor != null ? anchor.GetActiveSpline() : null;
             if (anchor == null || activeSpline == null)
             {
-                EditorUtility.DisplayDialog("Bake Anchor To AnimationClip", "请先指定有效的 Spline。", "OK");
+                EditorUtility.DisplayDialog("烘焙 Anchor 为 AnimationClip", "请先指定有效的 Spline。", "确定");
                 return;
             }
 
@@ -276,7 +349,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 hasSourceTimeline = TryFindSourceTimelineProgressSource(sourceAnimator, out sourceTimeline, out timelineMessage);
                 if (!hasSourceTimeline)
                 {
-                    EditorUtility.DisplayDialog("Bake Anchor From Source Timeline", timelineMessage, "OK");
+                    EditorUtility.DisplayDialog("从 Source Timeline 烘焙 Anchor", timelineMessage, "确定");
                     return;
                 }
 
@@ -365,7 +438,106 @@ namespace VFXTimelineSplineTool.EditorTools
 
             Selection.activeObject = clip;
             EditorGUIUtility.PingObject(clip);
-            Debug.Log("[VFX Timeline Spline Tool] Bake Anchor To AnimationClip 完成: " + path + " | Keyframes: " + samples.Count + " | Children: " + bakedChildCount, clip);
+            string report = BuildAnchorBakeReport(path, duration, frameRate, frameCount, samples.Count, keyframeStep, bakedChildCount, hasSourceTimeline, sourceTimeline, hasAnchorTimeline, anchorTimeline, anchor.bakeOptimizeCurves);
+            Debug.Log(report, clip);
+        }
+
+        private static bool GetAnchorBakePreflight(VFXSplineAnchor anchor, out string message, out MessageType messageType)
+        {
+            if (anchor == null)
+            {
+                message = "Anchor 烘焙预检查：缺少 VFXSplineAnchor。";
+                messageType = MessageType.Error;
+                return false;
+            }
+
+            if (anchor.GetActiveSpline() == null)
+            {
+                message = "Anchor 烘焙预检查：请指定 Spline，或启用“自动使用 Source Spline”并指定有效的 Source Animator。";
+                messageType = MessageType.Warning;
+                return false;
+            }
+
+            bool hasBakeChannel = anchor.bakePosition || anchor.bakeRotation || (anchor.bakeChildren && anchor.bakeChildScale);
+            if (!hasBakeChannel)
+            {
+                message = "Anchor 烘焙预检查：请开启“烘焙位置”“烘焙旋转”，或开启“烘焙子物体 + 烘焙子物体缩放”。";
+                messageType = MessageType.Warning;
+                return false;
+            }
+
+            if (anchor.anchorMode == VFXSplineAnchorMode.FollowAnimatorProgress)
+            {
+                if (anchor.sourceAnimator == null)
+                {
+                    message = "Anchor 烘焙预检查：Follow Animator Progress 模式需要指定 Source Animator。";
+                    messageType = MessageType.Warning;
+                    return false;
+                }
+
+                if (anchor.bakeUseSourceAnimatorProgress && anchor.sourceAnimator.bakeProgressSource == VFXSplineBakeProgressSource.ExistingAnimationClipProgressCurve)
+                {
+                    if (anchor.sourceAnimator.bakeSourceProgressClip == null)
+                    {
+                        message = "Anchor 烘焙预检查：Source Animator 使用 Existing AnimationClip Progress Curve，但缺少 Source Progress Clip。";
+                        messageType = MessageType.Warning;
+                        return false;
+                    }
+
+                    if (FindProgressCurve(anchor.sourceAnimator.bakeSourceProgressClip) == null)
+                    {
+                        message = "Anchor 烘焙预检查：Source Animator 的 Progress Clip 中没有 VFXSplineAnimator.progress 曲线，烘焙时会退回 Linear 0->1。";
+                        messageType = MessageType.Warning;
+                        return true;
+                    }
+                }
+
+                if (anchor.bakeUseSourceAnimatorProgress && anchor.sourceAnimator.bakeProgressSource == VFXSplineBakeProgressSource.TimelineBoundAnimationTrack)
+                {
+                    AnchorTimelineProgressSource found;
+                    string timelineMessage;
+                    if (!TryFindSourceTimelineProgressSource(anchor.sourceAnimator, out found, out timelineMessage))
+                    {
+                        message = "Anchor 烘焙预检查：" + timelineMessage;
+                        messageType = MessageType.Warning;
+                        return false;
+                    }
+                }
+            }
+
+            int childCount = anchor.bakeChildren ? Mathf.Max(0, anchor.transform.GetComponentsInChildren<Transform>(true).Length - 1) : 0;
+            string childInfo = anchor.bakeChildren ? "，子物体 Transform 数量：" + childCount : "";
+            message = "Anchor 烘焙预检查：已就绪。时长 " + Mathf.Max(0.01f, anchor.bakeDuration).ToString("F2") + " 秒，帧率 " + Mathf.Clamp(anchor.bakeFrameRate, 1, 240) + " fps" + childInfo + "，输出目录：" + NormalizeAssetFolder(string.IsNullOrEmpty(anchor.bakeSaveFolder) ? "Assets/Animations/SplineBakes" : anchor.bakeSaveFolder.Trim());
+            messageType = MessageType.Info;
+            return true;
+        }
+
+        private static string BuildAnchorBakeReport(string path, float duration, int frameRate, int frameCount, int keyframes, int keyframeStep, int bakedChildCount, bool hasSourceTimeline, AnchorTimelineProgressSource sourceTimeline, bool hasAnchorTimeline, AnchorTimelineProgressSource anchorTimeline, bool optimized)
+        {
+            string report = "[VFX Timeline Spline Tool] Bake Anchor To AnimationClip 完成\n" +
+                            "路径：" + path + "\n" +
+                            "时长：" + duration.ToString("F3") + " 秒\n" +
+                            "帧率：" + frameRate + "\n" +
+                            "总帧数：" + frameCount + "\n" +
+                            "Anchor 关键帧数：" + keyframes + "\n" +
+                            "关键帧间隔：" + keyframeStep + "\n" +
+                            "已烘焙子物体数量：" + bakedChildCount + "\n" +
+                            "优化曲线：" + optimized;
+
+            if (hasSourceTimeline)
+                report += "\nSource Animator Timeline：" + BuildAnchorTimelineSummary(sourceTimeline);
+            if (hasAnchorTimeline)
+                report += "\nAnchor Timeline：" + BuildAnchorTimelineSummary(anchorTimeline);
+
+            return report;
+        }
+
+        private static string BuildAnchorTimelineSummary(AnchorTimelineProgressSource source)
+        {
+            int clipCount = source.clips != null ? source.clips.Count : 0;
+            return (source.isInfiniteClip ? "Infinite Clip" : clipCount + " 个 Clip") +
+                   "，范围 " + source.timelineStart.ToString("F2") + "s - " + source.timelineEnd.ToString("F2") + "s" +
+                   "，时长 " + source.timelineDuration.ToString("F2") + "s";
         }
 
         private static AnchorBakeSample EvaluateAnchorBakeSample(VFXSplineAnchor anchor, VFXSimpleSpline activeSpline, Transform parent, Vector3 originalWorldPosition, Quaternion originalWorldRotation, int frameIndex, int frameCount, int frameRate, bool hasSourceTimeline, AnchorTimelineProgressSource sourceTimeline, bool hasAnchorTimeline, AnchorTimelineProgressSource anchorTimeline)
@@ -752,7 +924,15 @@ namespace VFXTimelineSplineTool.EditorTools
             }
 
             float sourceTime = GetSourceClipTime(null, bestClip, timelineTime, bakeTime);
-            bestClip.clip.SampleAnimation(anchor.gameObject, sourceTime);
+            AnchorStateSnapshot objectReferences = CaptureAnchorObjectReferences(anchor);
+            try
+            {
+                bestClip.clip.SampleAnimation(anchor.gameObject, sourceTime);
+            }
+            finally
+            {
+                RestoreAnchorObjectReferences(anchor, objectReferences);
+            }
         }
 
         private static AnchorStateSnapshot CaptureAnchorState(VFXSplineAnchor anchor)
@@ -762,8 +942,26 @@ namespace VFXTimelineSplineTool.EditorTools
                 return snapshot;
 
             snapshot.componentJson = EditorJsonUtility.ToJson(anchor);
+            CaptureAnchorObjectReferences(anchor, ref snapshot);
             snapshot.hierarchyTransforms = CaptureTransformSnapshots(anchor.transform.GetComponentsInChildren<Transform>(true));
             return snapshot;
+        }
+
+        private static AnchorStateSnapshot CaptureAnchorObjectReferences(VFXSplineAnchor anchor)
+        {
+            AnchorStateSnapshot snapshot = new AnchorStateSnapshot();
+            CaptureAnchorObjectReferences(anchor, ref snapshot);
+            return snapshot;
+        }
+
+        private static void CaptureAnchorObjectReferences(VFXSplineAnchor anchor, ref AnchorStateSnapshot snapshot)
+        {
+            if (anchor == null)
+                return;
+
+            snapshot.spline = anchor.spline;
+            snapshot.sourceAnimator = anchor.sourceAnimator;
+            snapshot.bakeChildAnimationClip = anchor.bakeChildAnimationClip;
         }
 
         private static void RestoreAnchorState(VFXSplineAnchor anchor, AnchorStateSnapshot snapshot)
@@ -774,7 +972,19 @@ namespace VFXTimelineSplineTool.EditorTools
             if (!string.IsNullOrEmpty(snapshot.componentJson))
                 EditorJsonUtility.FromJsonOverwrite(snapshot.componentJson, anchor);
 
+            RestoreAnchorObjectReferences(anchor, snapshot);
             RestoreTransformSnapshots(snapshot.hierarchyTransforms);
+            EditorUtility.SetDirty(anchor);
+        }
+
+        private static void RestoreAnchorObjectReferences(VFXSplineAnchor anchor, AnchorStateSnapshot snapshot)
+        {
+            if (anchor == null)
+                return;
+
+            anchor.spline = snapshot.spline;
+            anchor.sourceAnimator = snapshot.sourceAnimator;
+            anchor.bakeChildAnimationClip = snapshot.bakeChildAnimationClip;
         }
 
         private static bool IsTimelineBindingMatch(Object binding, Animator targetAnimator, GameObject targetGameObject, Transform targetTransform)
@@ -851,7 +1061,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 }
                 else if (!HasAnimatedVariation(childSamples, bakePosition, bakeRotation, bakeScale))
                 {
-                    Debug.LogWarning("[VFX Timeline Spline Tool] Child animation sampled no transform variation: " + path + ". Check whether the child animation clip paths match this hierarchy.", child);
+                    Debug.LogWarning("[VFX Timeline Spline Tool] 子物体动画采样后没有 Transform 变化：" + path + "。请检查子物体 AnimationClip 的路径是否匹配当前层级。", child);
                 }
                 WriteTransformCurves(clip, path, childSamples, bakePosition, bakeRotation, bakeScale);
                 count++;
@@ -884,6 +1094,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 return result;
 
             Dictionary<Transform, TransformSnapshot> originalTransforms = CaptureTransformSnapshots(transforms);
+            AnchorStateSnapshot anchorObjectReferences = CaptureAnchorObjectReferences(anchor);
             try
             {
                 for (int sampleIndex = 0; sampleIndex < timeSamples.Count; sampleIndex++)
@@ -892,6 +1103,7 @@ namespace VFXTimelineSplineTool.EditorTools
                     {
                         float sourceTime = GetChildAnimationSampleTime(anchor, sourceClip, timeSamples[sampleIndex].time, bakeDuration);
                         sourceClip.SampleAnimation(anchor.gameObject, sourceTime);
+                        RestoreAnchorObjectReferences(anchor, anchorObjectReferences);
                     }
                     else
                     {
@@ -903,6 +1115,7 @@ namespace VFXTimelineSplineTool.EditorTools
                             float childSourceTime = GetChildAnimationSampleTime(anchor, pair.Value, timeSamples[sampleIndex].time, bakeDuration);
                             pair.Value.SampleAnimation(pair.Key, childSourceTime);
                         }
+                        RestoreAnchorObjectReferences(anchor, anchorObjectReferences);
                     }
 
                     for (int i = 0; i < transforms.Length; i++)
@@ -926,6 +1139,7 @@ namespace VFXTimelineSplineTool.EditorTools
             }
             finally
             {
+                RestoreAnchorObjectReferences(anchor, anchorObjectReferences);
                 RestoreTransformSnapshots(originalTransforms);
             }
 

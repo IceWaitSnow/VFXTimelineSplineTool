@@ -10,8 +10,8 @@ namespace VFXTimelineSplineTool.EditorTools
     using VFXTimelineSplineTool;
 
     /// <summary>
-    /// Timeline source reporter for VFXSplineAnimator bake workflow.
-    /// v2.6.5: gives an explicit Refresh button and shows the whole blended clip range.
+    /// VFXSplineAnimator 烘焙流程使用的 Timeline 来源报告窗口。
+    /// v2.6.5：提供显式 Refresh 按钮，并显示完整的混合 Clip 范围。
     /// </summary>
     public class VFXSplineTimelineSourceReporterWindow : EditorWindow
     {
@@ -85,7 +85,7 @@ namespace VFXTimelineSplineTool.EditorTools
         private void OnGUI()
         {
             EditorGUILayout.Space(6);
-            EditorGUILayout.LabelField("Timeline Source Reporter v" + VFXSplineToolVersion.Version, EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Timeline 来源报告 v" + VFXSplineToolVersion.Version, EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("用于检查 Timeline Bound Animation Track 烘焙源。它会扫描绑定当前物体的 Animation Track，并按整条 Track 上所有带 progress 曲线的 Clip 计算总范围。", MessageType.Info);
 
             animator = (VFXSplineAnimator)EditorGUILayout.ObjectField("Spline Animator", animator, typeof(VFXSplineAnimator), true);
@@ -93,12 +93,12 @@ namespace VFXTimelineSplineTool.EditorTools
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Refresh Timeline Source"))
+                if (GUILayout.Button("刷新 Timeline 来源"))
                     RefreshReport();
 
                 using (new EditorGUI.DisabledScope(!lastScanOk || animator == null))
                 {
-                    if (GUILayout.Button("Use Found Duration"))
+                    if (GUILayout.Button("使用找到的时长"))
                     {
                         Undo.RecordObject(animator, "Use Found Timeline Duration");
                         animator.bakeDuration = Mathf.Max(0.01f, (float)foundDuration);
@@ -113,7 +113,7 @@ namespace VFXTimelineSplineTool.EditorTools
             DrawSummary();
 
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Report", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("报告", EditorStyles.boldLabel);
             scroll = EditorGUILayout.BeginScrollView(scroll);
             EditorGUILayout.TextArea(report, GUILayout.MinHeight(160));
             EditorGUILayout.EndScrollView();

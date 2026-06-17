@@ -3,7 +3,7 @@
 using UnityEditor;
 using UnityEngine;
 
-// compatibility layer for old windows
+// 旧窗口兼容层。
 namespace VFXTimelineSplineTool.EditorTools
 {
     using VFXTimelineSplineTool;

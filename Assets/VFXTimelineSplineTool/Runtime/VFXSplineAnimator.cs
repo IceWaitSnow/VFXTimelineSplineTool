@@ -48,22 +48,22 @@ namespace VFXTimelineSplineTool
         [Header("Spline")]
         public VFXSimpleSpline spline;
 
-        [Header("Animation Track 可K参数")]
+        [Header("Animation Track 可 K 参数")]
         [Range(0f, 1f)] public float progress = 0f;
 
-        [Header("Motion")]
+        [Header("运动设置")]
         public bool reverse = false;
         public bool loop = false;
         public bool useDistanceBasedProgress = true;
         public Vector3 positionOffset = Vector3.zero;
 
-        [Header("Rotation")]
+        [Header("旋转设置")]
         public VFXSplineRotationMode rotationMode = VFXSplineRotationMode.Full3D;
         public VFXSplineForwardAxis forwardAxis = VFXSplineForwardAxis.ZPositive;
         public Vector3 rotationOffsetEuler = Vector3.zero;
         public Vector3 fallbackForward = Vector3.forward;
 
-        [Header("Editor Preview")]
+        [Header("编辑器预览")]
         [Tooltip("新版编辑模式预览控制。Off=编辑模式不自动写 Transform；Always=和旧版一样一直预览；Only When Selected=只有选中物体时才自动预览。")]
         public VFXSplineEditorPreviewMode editorPreviewMode = VFXSplineEditorPreviewMode.Always;
 
@@ -73,7 +73,7 @@ namespace VFXTimelineSplineTool
         public bool showCurrentProgressPoint = true;
         public Color previewColor = Color.green;
 
-        [Header("Bake To AnimationClip")]
+        [Header("Bake To AnimationClip / 烘焙")]
         [Tooltip("烘焙输出的 AnimationClip 帧率。特效建议 60。")]
         public int bakeFrameRate = 60;
 
@@ -308,7 +308,7 @@ namespace VFXTimelineSplineTool
 
             if (Mathf.Abs(to - from) > 0.5f)
             {
-                // likely loop or timeline jump; reset to avoid mass triggering.
+                // 可能是循环或 Timeline 跳帧；重置状态，避免一次性触发大量事件。
                 spline.ResetEventFireStates();
                 return;
             }

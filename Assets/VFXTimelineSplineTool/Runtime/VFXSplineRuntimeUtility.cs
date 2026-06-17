@@ -3,9 +3,9 @@ using UnityEngine;
 namespace VFXTimelineSplineTool
 {
     /// <summary>
-    /// Runtime helper methods shared by animator preview and bake.
+    /// Animator 预览与烘焙共用的 Runtime 辅助方法。
     ///
-    /// Shared helpers for animator preview, Timeline evaluation, and bake.
+    /// Animator 预览、Timeline 计算和烘焙共用的辅助方法。
     /// </summary>
     public static class VFXSplineRuntimeUtility
     {

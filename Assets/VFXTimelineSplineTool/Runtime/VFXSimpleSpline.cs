@@ -51,7 +51,7 @@ namespace VFXTimelineSplineTool
         public string sendMessageName = "OnSplineEvent";
         [HideInInspector] public Color eventColor = new Color(1f, 0.25f, 0.1f, 1f); // v2.0 起隐藏：事件系统保留为旧工程兼容。
 
-        [Header("Spawn Position")]
+        [Header("生成位置")]
         public bool placeTargetAtEventPoint = true;
         public bool placeParticleAtEventPoint = true;
         public bool placeAudioAtEventPoint = true;
@@ -177,7 +177,7 @@ namespace VFXTimelineSplineTool
     {
         public const string ToolVersion = VFXSplineToolVersion.Version;
 
-        [Header("Path Settings")]
+        [Header("路径设置")]
         public VFXSplinePathMode pathMode = VFXSplinePathMode.CatmullRom;
         public Color pathColor = new Color(1f, 0.68f, 0.02f, 1f);
         public Color progressMarkColor = new Color(0.1f, 0.72f, 1f, 1f);
@@ -186,7 +186,7 @@ namespace VFXTimelineSplineTool
         [Min(0.01f)] public float pointSize = 0.15f;
         [Range(8, 256)] public int resolution = 48;
 
-        [Header("Display")]
+        [Header("显示设置")]
         public bool alwaysShowPathInSceneView = true;
         public bool showPointLabels = true;
         public bool showAllPointHandles = false;
@@ -200,7 +200,7 @@ namespace VFXTimelineSplineTool
         [HideInInspector] public bool showEvents = false; // v2.0 起隐藏：事件系统不作为正式教程流程。
         [HideInInspector] public bool eventMarksUseDistance = true;
 
-        [Header("Dynamic Start / End Binding")]
+        [Header("动态起点 / 终点绑定")]
         [Tooltip("开启后，路径第一个点会跟随 Start Transform，最后一个点会跟随 End Transform。适合飞向目标、奖励飞行、吸入路径等场景。")]
         public bool enableDynamicStartEndBinding = false;
         [Tooltip("动态起点。为空时继续使用 Local Points 的第一个点。") ]
@@ -212,10 +212,10 @@ namespace VFXTimelineSplineTool
         [Tooltip("Scene 视图中显示动态绑定端点的标签。") ]
         public bool showDynamicBindingLabels = true;
 
-        [Header("Distance Based Progress")]
+        [Header("距离等速 Progress")]
         [Range(32, 2048)] public int distanceSampleResolution = 256;
 
-        [Header("Points - Local Space")]
+        [Header("控制点 - Local Space")]
         public List<Vector3> localPoints = new List<Vector3>()
         {
             new Vector3(0f, 0f, 0f),
@@ -224,7 +224,7 @@ namespace VFXTimelineSplineTool
             new Vector3(6f, 0f, 0f)
         };
 
-        [Header("Bezier Points - Local Space")]
+        [Header("Bezier 控制点 - Local Space")]
         public List<VFXBezierPoint> bezierPoints = new List<VFXBezierPoint>();
 
         [HideInInspector] public List<VFXSplineEvent> events = new List<VFXSplineEvent>(); // 保留旧版数据兼容，Inspector 默认不显示。
