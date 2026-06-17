@@ -62,6 +62,46 @@ namespace VFXTimelineSplineTool
         public Color labelColor = new Color(1f, 0.2f, 1f, 1f);
         [Min(0.02f)] public float gizmoSize = 0.18f;
 
+        [Header("Bake To AnimationClip")]
+        [Tooltip("烘焙输出的 AnimationClip 帧率。")]
+        public int bakeFrameRate = 60;
+        [Tooltip("烘焙动画时长，单位秒。Follow Animator Progress 时可手动填成源运动物体的烘焙时长。")]
+        public float bakeDuration = 1f;
+        [Tooltip("是否烘焙 Transform Position。")]
+        public bool bakePosition = true;
+        [Tooltip("是否烘焙 Transform Rotation。")]
+        public bool bakeRotation = true;
+        [Tooltip("开启后，会把 Anchor 下所有子物体的 Local Transform 一起写进同一个 AnimationClip。")]
+        public bool bakeChildren = false;
+        [Tooltip("Bake Children 开启时，是否同时烘焙子物体 Local Scale。")]
+        public bool bakeChildScale = true;
+        [Tooltip("Bake Children 开启时，采样这个已有 AnimationClip 里的子物体动画，再写入最终烘焙 Clip。为空时使用当前子物体静态 Local Transform。")]
+        public AnimationClip bakeChildAnimationClip;
+        [Tooltip("Child Animation Clip 为空时，自动尝试采样子物体自身 Animation / Animator Controller 里的第一个 Clip。")]
+        public bool bakeAutoSampleChildAnimations = true;
+        [Tooltip("开启后，子物体动画 Clip 会按烘焙时长归一化采样；关闭后按真实秒数采样。")]
+        public bool bakeChildAnimationUseNormalizedTime = true;
+        [Tooltip("关闭 Normalized Time 时，超过子物体动画 Clip 长度后是否循环采样。")]
+        public bool bakeChildAnimationLoop = true;
+        [Tooltip("Follow Animator Progress 模式下，开启后会按 Source Animator 的 Bake Progress Source 采样进度。")]
+        public bool bakeUseSourceAnimatorProgress = true;
+        [Tooltip("烘焙文件保存目录。")]
+        public string bakeSaveFolder = "Assets/Animations/SplineBakes";
+        [Tooltip("烘焙 AnimationClip 文件名。为空时自动使用物体名。")]
+        public string bakeClipName = "";
+        [Tooltip("烘焙完成后，如果物体没有 Animator，则自动添加 Animator 组件。")]
+        public bool bakeAddAnimatorIfMissing = true;
+        [Tooltip("关键帧间隔。1=每帧记录，2=隔一帧记录一次。")]
+        [Min(1)] public int bakeKeyframeStep = 1;
+        [Tooltip("无论 Keyframe Step 是多少，都强制记录第一帧和最后一帧。")]
+        public bool bakeAlwaysKeyStartAndEnd = true;
+        [Tooltip("开启后，会根据误差阈值自动删除多余关键帧。")]
+        public bool bakeOptimizeCurves = false;
+        [Tooltip("位置优化误差阈值，单位为 Unity 距离。")]
+        public float bakePositionTolerance = 0.005f;
+        [Tooltip("旋转优化误差阈值，单位为角度。")]
+        public float bakeRotationTolerance = 0.25f;
+
         private void Reset()
         {
             spline = null;
@@ -84,6 +124,25 @@ namespace VFXTimelineSplineTool
             applyOnValidate = true;
             showSceneLabel = true;
             gizmoSize = 0.18f;
+            bakeFrameRate = 60;
+            bakeDuration = 1f;
+            bakePosition = true;
+            bakeRotation = true;
+            bakeChildren = false;
+            bakeChildScale = true;
+            bakeChildAnimationClip = null;
+            bakeAutoSampleChildAnimations = true;
+            bakeChildAnimationUseNormalizedTime = true;
+            bakeChildAnimationLoop = true;
+            bakeUseSourceAnimatorProgress = true;
+            bakeSaveFolder = "Assets/Animations/SplineBakes";
+            bakeClipName = "";
+            bakeAddAnimatorIfMissing = true;
+            bakeKeyframeStep = 1;
+            bakeAlwaysKeyStartAndEnd = true;
+            bakeOptimizeCurves = false;
+            bakePositionTolerance = 0.005f;
+            bakeRotationTolerance = 0.25f;
             if (string.IsNullOrEmpty(label)) label = name;
         }
 
@@ -96,6 +155,11 @@ namespace VFXTimelineSplineTool
         {
             progress = Mathf.Clamp01(progress);
             gizmoSize = Mathf.Max(0.02f, gizmoSize);
+            bakeFrameRate = Mathf.Clamp(bakeFrameRate, 1, 240);
+            bakeDuration = Mathf.Max(0.01f, bakeDuration);
+            bakeKeyframeStep = Mathf.Max(1, bakeKeyframeStep);
+            bakePositionTolerance = Mathf.Max(0f, bakePositionTolerance);
+            bakeRotationTolerance = Mathf.Max(0f, bakeRotationTolerance);
             if (string.IsNullOrEmpty(label)) label = name;
             if (applyOnValidate && (Application.isPlaying || previewInEditMode))
                 ApplyAnchor();

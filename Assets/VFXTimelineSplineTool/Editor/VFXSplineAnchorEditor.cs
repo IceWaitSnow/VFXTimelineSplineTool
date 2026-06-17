@@ -1,7 +1,10 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
+using System.IO;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Playables;
+using UnityEngine.Timeline;
 
 namespace VFXTimelineSplineTool.EditorTools
 {
@@ -121,6 +124,8 @@ namespace VFXTimelineSplineTool.EditorTools
                     EditorGUIUtility.PingObject(activeSpline.gameObject);
                 }
             }
+
+            DrawBakeTools(anchor);
         }
 
         private void DrawProperty(string name, string label)
@@ -146,6 +151,1101 @@ namespace VFXTimelineSplineTool.EditorTools
             anchor.ApplyAnchor();
             EditorUtility.SetDirty(anchor);
             SceneView.RepaintAll();
+        }
+
+        private void DrawBakeTools(VFXSplineAnchor anchor)
+        {
+            EditorGUILayout.Space(10);
+            EditorGUILayout.LabelField("Bake Anchor To AnimationClip / 烘焙挂点", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("把当前 Anchor 的路径挂点结果烘焙成 Unity 原生 Transform AnimationClip。Follow Animator Progress 模式会优先按 Source Animator 的 Bake Progress Source 采样进度。", MessageType.Info);
+
+            serializedObject.Update();
+            DrawProperty("bakeFrameRate", "Frame Rate");
+            DrawProperty("bakeDuration", "Duration");
+            DrawProperty("bakePosition", "Bake Position");
+            DrawProperty("bakeRotation", "Bake Rotation");
+            DrawProperty("bakeChildren", "Bake Children");
+            if (serializedObject.FindProperty("bakeChildren").boolValue)
+            {
+                DrawProperty("bakeChildScale", "Bake Child Scale");
+                DrawProperty("bakeChildAnimationClip", "Child Animation Clip");
+                if (serializedObject.FindProperty("bakeChildAnimationClip").objectReferenceValue != null)
+                {
+                    DrawProperty("bakeChildAnimationUseNormalizedTime", "Use Normalized Child Time");
+                    if (!serializedObject.FindProperty("bakeChildAnimationUseNormalizedTime").boolValue)
+                        DrawProperty("bakeChildAnimationLoop", "Loop Child Animation");
+                }
+                else
+                {
+                    DrawProperty("bakeAutoSampleChildAnimations", "Auto Sample Child Animations");
+                    if (serializedObject.FindProperty("bakeAutoSampleChildAnimations").boolValue)
+                    {
+                        DrawProperty("bakeChildAnimationUseNormalizedTime", "Use Normalized Child Time");
+                        if (!serializedObject.FindProperty("bakeChildAnimationUseNormalizedTime").boolValue)
+                            DrawProperty("bakeChildAnimationLoop", "Loop Child Animation");
+                    }
+                }
+            }
+            if (anchor.anchorMode == VFXSplineAnchorMode.FollowAnimatorProgress)
+                DrawProperty("bakeUseSourceAnimatorProgress", "Use Source Animator Progress Source");
+            DrawProperty("bakeSaveFolder", "Save Folder");
+            DrawProperty("bakeClipName", "Clip Name");
+            DrawProperty("bakeAddAnimatorIfMissing", "Add Animator If Missing");
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("Bake Simplify / 关键帧简化", EditorStyles.boldLabel);
+            DrawProperty("bakeKeyframeStep", "Keyframe Step");
+            DrawProperty("bakeAlwaysKeyStartAndEnd", "Always Key Start And End");
+            DrawProperty("bakeOptimizeCurves", "Optimize Curves");
+            if (serializedObject.FindProperty("bakeOptimizeCurves").boolValue)
+            {
+                DrawProperty("bakePositionTolerance", "Position Tolerance");
+                DrawProperty("bakeRotationTolerance", "Rotation Tolerance");
+            }
+            serializedObject.ApplyModifiedProperties();
+
+            bool hasBakeChannel = anchor.bakePosition || anchor.bakeRotation || (anchor.bakeChildren && anchor.bakeChildScale);
+            using (new EditorGUI.DisabledScope(anchor.GetActiveSpline() == null || !hasBakeChannel))
+            {
+                if (GUILayout.Button("Bake Anchor To AnimationClip"))
+                    BakeAnchorToAnimationClip(anchor);
+            }
+        }
+
+        private struct AnchorTimelineProgressClip
+        {
+            public TimelineClip timelineClip;
+            public AnimationClip clip;
+            public double timelineStart;
+            public double timelineEnd;
+            public double clipIn;
+            public bool isInfiniteClip;
+        }
+
+        private struct AnchorTimelineProgressSource
+        {
+            public List<AnchorTimelineProgressClip> clips;
+            public double timelineStart;
+            public double timelineEnd;
+            public double timelineDuration;
+            public bool isInfiniteClip;
+        }
+
+        private struct AnchorBakeSample
+        {
+            public float time;
+            public Vector3 localPosition;
+            public Quaternion localRotation;
+            public Vector3 localScale;
+        }
+
+        private struct TransformSnapshot
+        {
+            public Vector3 localPosition;
+            public Quaternion localRotation;
+            public Vector3 localScale;
+        }
+
+        private struct AnchorStateSnapshot
+        {
+            public string componentJson;
+            public Dictionary<Transform, TransformSnapshot> hierarchyTransforms;
+        }
+
+        private static void BakeAnchorToAnimationClip(VFXSplineAnchor anchor)
+        {
+            VFXSimpleSpline activeSpline = anchor != null ? anchor.GetActiveSpline() : null;
+            if (anchor == null || activeSpline == null)
+            {
+                EditorUtility.DisplayDialog("Bake Anchor To AnimationClip", "请先指定有效的 Spline。", "OK");
+                return;
+            }
+
+            int frameRate = Mathf.Clamp(anchor.bakeFrameRate, 1, 240);
+            float duration = Mathf.Max(0.01f, anchor.bakeDuration);
+
+            AnchorTimelineProgressSource sourceTimeline = default;
+            bool hasSourceTimeline = false;
+            VFXSplineAnimator sourceAnimator = anchor.sourceAnimator;
+            if (anchor.anchorMode == VFXSplineAnchorMode.FollowAnimatorProgress &&
+                anchor.bakeUseSourceAnimatorProgress &&
+                sourceAnimator != null &&
+                sourceAnimator.bakeProgressSource == VFXSplineBakeProgressSource.TimelineBoundAnimationTrack)
+            {
+                string timelineMessage;
+                hasSourceTimeline = TryFindSourceTimelineProgressSource(sourceAnimator, out sourceTimeline, out timelineMessage);
+                if (!hasSourceTimeline)
+                {
+                    EditorUtility.DisplayDialog("Bake Anchor From Source Timeline", timelineMessage, "OK");
+                    return;
+                }
+
+                if (sourceAnimator.bakeUseTimelineClipDuration)
+                    duration = Mathf.Max(0.01f, (float)sourceTimeline.timelineDuration);
+            }
+
+            int frameCount = Mathf.Max(1, Mathf.RoundToInt(duration * frameRate));
+            int keyframeStep = Mathf.Max(1, anchor.bakeKeyframeStep);
+
+            AnchorTimelineProgressSource anchorTimeline = default;
+            bool hasAnchorTimeline = TryFindAnchorTimelineAnimationSource(anchor, out anchorTimeline);
+            if (hasAnchorTimeline && !hasSourceTimeline)
+            {
+                duration = Mathf.Max(duration, (float)anchorTimeline.timelineDuration);
+                frameCount = Mathf.Max(1, Mathf.RoundToInt(duration * frameRate));
+            }
+
+            string folder = NormalizeAssetFolder(string.IsNullOrEmpty(anchor.bakeSaveFolder) ? "Assets/Animations/SplineBakes" : anchor.bakeSaveFolder.Trim());
+            EnsureAssetFolder(folder);
+
+            string baseName = string.IsNullOrEmpty(anchor.bakeClipName) ? anchor.gameObject.name + "_AnchorBake" : anchor.bakeClipName.Trim();
+            string path = AssetDatabase.GenerateUniqueAssetPath(folder + "/" + SanitizeFileName(baseName) + ".anim");
+
+            AnimationClip clip = new AnimationClip();
+            clip.name = Path.GetFileNameWithoutExtension(path);
+            clip.frameRate = frameRate;
+
+            List<AnchorBakeSample> samples = new List<AnchorBakeSample>();
+            Transform tr = anchor.transform;
+            Transform parent = tr.parent;
+            Vector3 originalWorldPosition = tr.position;
+            Quaternion originalWorldRotation = tr.rotation;
+            AnchorStateSnapshot originalAnchorState = CaptureAnchorState(anchor);
+
+            try
+            {
+                for (int i = 0; i <= frameCount; i++)
+                {
+                    bool shouldKey = (i % keyframeStep == 0);
+                    if (anchor.bakeAlwaysKeyStartAndEnd && (i == 0 || i == frameCount))
+                        shouldKey = true;
+                    if (!shouldKey)
+                        continue;
+
+                    samples.Add(EvaluateAnchorBakeSample(anchor, activeSpline, parent, originalWorldPosition, originalWorldRotation, i, frameCount, frameRate, hasSourceTimeline, sourceTimeline, hasAnchorTimeline, anchorTimeline));
+                }
+
+                if (samples.Count == 0)
+                    samples.Add(EvaluateAnchorBakeSample(anchor, activeSpline, parent, originalWorldPosition, originalWorldRotation, 0, frameCount, frameRate, hasSourceTimeline, sourceTimeline, hasAnchorTimeline, anchorTimeline));
+
+                if (anchor.bakeAlwaysKeyStartAndEnd)
+                {
+                    if (samples[0].time > 0f)
+                        samples.Insert(0, EvaluateAnchorBakeSample(anchor, activeSpline, parent, originalWorldPosition, originalWorldRotation, 0, frameCount, frameRate, hasSourceTimeline, sourceTimeline, hasAnchorTimeline, anchorTimeline));
+
+                    float endTime = frameCount / (float)frameRate;
+                    if (Mathf.Abs(samples[samples.Count - 1].time - endTime) > 0.0001f)
+                        samples.Add(EvaluateAnchorBakeSample(anchor, activeSpline, parent, originalWorldPosition, originalWorldRotation, frameCount, frameCount, frameRate, hasSourceTimeline, sourceTimeline, hasAnchorTimeline, anchorTimeline));
+                }
+            }
+            finally
+            {
+                RestoreAnchorState(anchor, originalAnchorState);
+            }
+
+            List<AnchorBakeSample> childSampleTimes = samples;
+            if (anchor.bakeOptimizeCurves && samples.Count > 2)
+                samples = OptimizeSamples(samples, anchor.bakePosition, anchor.bakeRotation, Mathf.Max(0f, anchor.bakePositionTolerance), Mathf.Max(0f, anchor.bakeRotationTolerance));
+
+            WriteTransformCurves(clip, "", samples, anchor.bakePosition, anchor.bakeRotation, false);
+
+            int bakedChildCount = 0;
+            if (anchor.bakeChildren)
+                bakedChildCount = WriteChildTransformCurves(clip, anchor, childSampleTimes, anchor.bakePosition, anchor.bakeRotation, anchor.bakeChildScale, duration);
+
+            if (anchor.bakeRotation)
+                clip.EnsureQuaternionContinuity();
+
+            AssetDatabase.CreateAsset(clip, path);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            if (anchor.bakeAddAnimatorIfMissing && anchor.gameObject.GetComponent<Animator>() == null)
+                Undo.AddComponent<Animator>(anchor.gameObject);
+
+            Selection.activeObject = clip;
+            EditorGUIUtility.PingObject(clip);
+            Debug.Log("[VFX Timeline Spline Tool] Bake Anchor To AnimationClip 完成: " + path + " | Keyframes: " + samples.Count + " | Children: " + bakedChildCount, clip);
+        }
+
+        private static AnchorBakeSample EvaluateAnchorBakeSample(VFXSplineAnchor anchor, VFXSimpleSpline activeSpline, Transform parent, Vector3 originalWorldPosition, Quaternion originalWorldRotation, int frameIndex, int frameCount, int frameRate, bool hasSourceTimeline, AnchorTimelineProgressSource sourceTimeline, bool hasAnchorTimeline, AnchorTimelineProgressSource anchorTimeline)
+        {
+            float time = frameIndex / (float)frameRate;
+            float normalized = frameCount <= 0 ? 0f : frameIndex / (float)frameCount;
+            if (hasAnchorTimeline)
+                SampleAnchorTimelineAnimation(anchor, anchorTimeline, time, normalized);
+
+            float p = EvaluateAnchorProgressForBake(anchor, time, normalized, hasSourceTimeline, sourceTimeline);
+
+            Vector3 worldPosition = originalWorldPosition;
+            if (anchor.followPosition)
+                worldPosition = activeSpline.GetPoint(p, anchor.useDistanceBasedProgress) + anchor.positionOffset;
+
+            Quaternion worldRotation = originalWorldRotation;
+            if (anchor.rotationMode != VFXSplineRotationMode.None)
+            {
+                Vector3 tangent = activeSpline.GetTangent(p, anchor.useDistanceBasedProgress);
+                if (tangent.sqrMagnitude < 0.000001f)
+                    tangent = anchor.fallbackForward.sqrMagnitude > 0.000001f ? anchor.fallbackForward.normalized : Vector3.forward;
+                worldRotation = anchor.BuildRotation(tangent) * Quaternion.Euler(anchor.rotationOffsetEuler);
+            }
+
+            AnchorBakeSample sample = new AnchorBakeSample();
+            sample.time = time;
+            sample.localPosition = parent != null ? parent.InverseTransformPoint(worldPosition) : worldPosition;
+            sample.localRotation = parent != null ? Quaternion.Inverse(parent.rotation) * worldRotation : worldRotation;
+            sample.localRotation = NormalizeQuaternion(sample.localRotation);
+            sample.localScale = anchor.transform.localScale;
+            return sample;
+        }
+
+        private static float EvaluateAnchorProgressForBake(VFXSplineAnchor anchor, float bakeTime, float normalizedTime, bool hasSourceTimeline, AnchorTimelineProgressSource sourceTimeline)
+        {
+            if (anchor.anchorMode == VFXSplineAnchorMode.FollowAnimatorProgress && anchor.sourceAnimator != null)
+            {
+                float sourceProgress = anchor.bakeUseSourceAnimatorProgress
+                    ? EvaluateSourceAnimatorProgressForBake(anchor.sourceAnimator, bakeTime, normalizedTime, hasSourceTimeline, sourceTimeline)
+                    : anchor.sourceAnimator.progress;
+
+                float sourceEvaluated = anchor.sourceAnimator.EvaluateProgressValue(sourceProgress);
+                return anchor.EvaluateProgressValue(sourceEvaluated + anchor.progressOffset);
+            }
+
+            return anchor.EvaluateProgressValue(anchor.progress);
+        }
+
+        private static float EvaluateSourceAnimatorProgressForBake(VFXSplineAnimator animator, float bakeTime, float normalizedTime, bool hasSourceTimeline, AnchorTimelineProgressSource sourceTimeline)
+        {
+            if (animator == null)
+                return normalizedTime;
+
+            switch (animator.bakeProgressSource)
+            {
+                case VFXSplineBakeProgressSource.BakeProgressCurve:
+                    return animator.bakeProgressCurve != null ? animator.bakeProgressCurve.Evaluate(normalizedTime) : normalizedTime;
+
+                case VFXSplineBakeProgressSource.CurrentAnimatorProgress:
+                    return animator.progress;
+
+                case VFXSplineBakeProgressSource.ExistingAnimationClipProgressCurve:
+                    return EvaluateProgressFromSourceClip(animator, bakeTime, normalizedTime);
+
+                case VFXSplineBakeProgressSource.TimelineBoundAnimationTrack:
+                    return hasSourceTimeline ? EvaluateProgressFromTimelineSource(animator, sourceTimeline, bakeTime, normalizedTime) : normalizedTime;
+
+                case VFXSplineBakeProgressSource.Linear01:
+                default:
+                    return normalizedTime;
+            }
+        }
+
+        private static float EvaluateProgressFromSourceClip(VFXSplineAnimator animator, float bakeTime, float normalizedTime)
+        {
+            AnimationClip sourceClip = animator != null ? animator.bakeSourceProgressClip : null;
+            if (sourceClip == null)
+                return normalizedTime;
+
+            AnimationCurve progressCurve = FindProgressCurve(sourceClip);
+            if (progressCurve == null)
+                return normalizedTime;
+
+            float sourceTime = animator.bakeSourceClipUseNormalizedTime
+                ? normalizedTime * Mathf.Max(0.0001f, sourceClip.length)
+                : bakeTime;
+
+            return progressCurve.Evaluate(sourceTime);
+        }
+
+        private static float EvaluateProgressFromTimelineSource(VFXSplineAnimator animator, AnchorTimelineProgressSource source, float bakeTime, float normalizedTime)
+        {
+            if (source.clips == null || source.clips.Count == 0)
+                return normalizedTime;
+
+            double timelineTime = source.timelineStart + bakeTime;
+            float weightedProgress = 0f;
+            float totalWeight = 0f;
+
+            for (int i = 0; i < source.clips.Count; i++)
+            {
+                AnchorTimelineProgressClip progressClip = source.clips[i];
+                if (progressClip.clip == null)
+                    continue;
+
+                if (timelineTime < progressClip.timelineStart || timelineTime > progressClip.timelineEnd)
+                    continue;
+
+                AnimationCurve progressCurve = FindProgressCurve(progressClip.clip);
+                if (progressCurve == null)
+                    continue;
+
+                float weight = GetTimelineClipWeight(progressClip, timelineTime);
+                if (weight <= 0.0001f)
+                    continue;
+
+                float sourceTime = GetSourceClipTime(animator, progressClip, timelineTime, bakeTime);
+                weightedProgress += progressCurve.Evaluate(sourceTime) * weight;
+                totalWeight += weight;
+            }
+
+            if (totalWeight > 0.0001f)
+                return weightedProgress / totalWeight;
+
+            return normalizedTime;
+        }
+
+        private static float GetTimelineClipWeight(AnchorTimelineProgressClip progressClip, double timelineTime)
+        {
+            if (progressClip.isInfiniteClip || progressClip.timelineClip == null)
+                return 1f;
+
+            return Mathf.Clamp01(progressClip.timelineClip.EvaluateMixIn(timelineTime) * progressClip.timelineClip.EvaluateMixOut(timelineTime));
+        }
+
+        private static float GetSourceClipTime(VFXSplineAnimator animator, AnchorTimelineProgressClip progressClip, double timelineTime, float bakeTime)
+        {
+            float sourceLength = Mathf.Max(0.0001f, progressClip.clip != null ? progressClip.clip.length : 0f);
+            if (progressClip.isInfiniteClip || progressClip.timelineClip == null)
+            {
+                if (animator != null && animator.bakeTimelineInfiniteClipMode == VFXSplineTimelineInfiniteClipBakeMode.Loop)
+                    return Mathf.Repeat(bakeTime, sourceLength);
+
+                return Mathf.Clamp(bakeTime, 0f, sourceLength);
+            }
+
+            double localTimelineTime = timelineTime - progressClip.timelineStart;
+            return Mathf.Clamp((float)(progressClip.clipIn + localTimelineTime * progressClip.timelineClip.timeScale), 0f, sourceLength);
+        }
+
+        private static bool TryFindSourceTimelineProgressSource(VFXSplineAnimator animator, out AnchorTimelineProgressSource result, out string message)
+        {
+            result = default;
+            message = "没有找到绑定到 Source Animator 的 Timeline Animation Track，或者 Track 上没有 VFXSplineAnimator.progress 曲线。";
+            if (animator == null)
+                return false;
+
+            PlayableDirector[] directors;
+            if (animator.bakePlayableDirector != null)
+            {
+                directors = new[] { animator.bakePlayableDirector };
+            }
+            else
+            {
+#if UNITY_2023_1_OR_NEWER
+                directors = Object.FindObjectsByType<PlayableDirector>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+#else
+                directors = Object.FindObjectsOfType<PlayableDirector>(true);
+#endif
+            }
+
+            Animator targetAnimator = animator.GetComponent<Animator>();
+            GameObject targetGameObject = animator.gameObject;
+            Transform targetTransform = animator.transform;
+
+            for (int d = 0; d < directors.Length; d++)
+            {
+                PlayableDirector director = directors[d];
+                TimelineAsset timeline = director != null ? director.playableAsset as TimelineAsset : null;
+                if (timeline == null)
+                    continue;
+
+                foreach (TrackAsset track in timeline.GetOutputTracks())
+                {
+                    AnimationTrack animationTrack = track as AnimationTrack;
+                    if (animationTrack == null)
+                        continue;
+
+                    Object binding = director.GetGenericBinding(animationTrack);
+                    if (!IsTimelineBindingMatch(binding, targetAnimator, targetGameObject, targetTransform))
+                        continue;
+
+                    if (!animationTrack.inClipMode && animationTrack.infiniteClip != null && FindProgressCurve(animationTrack.infiniteClip) != null)
+                    {
+                        float clipLength = Mathf.Max(0.01f, animationTrack.infiniteClip.length);
+                        result.clips = new List<AnchorTimelineProgressClip>()
+                        {
+                            new AnchorTimelineProgressClip()
+                            {
+                                timelineClip = null,
+                                clip = animationTrack.infiniteClip,
+                                timelineStart = 0.0,
+                                timelineEnd = clipLength,
+                                clipIn = 0.0,
+                                isInfiniteClip = true
+                            }
+                        };
+                        result.timelineStart = 0.0;
+                        result.timelineEnd = clipLength;
+                        result.timelineDuration = clipLength;
+                        result.isInfiniteClip = true;
+                        return true;
+                    }
+
+                    List<AnchorTimelineProgressClip> progressClips = new List<AnchorTimelineProgressClip>();
+                    foreach (TimelineClip timelineClip in animationTrack.GetClips())
+                    {
+                        AnimationPlayableAsset playableAsset = timelineClip != null ? timelineClip.asset as AnimationPlayableAsset : null;
+                        if (playableAsset == null || playableAsset.clip == null || FindProgressCurve(playableAsset.clip) == null)
+                            continue;
+
+                        progressClips.Add(new AnchorTimelineProgressClip()
+                        {
+                            timelineClip = timelineClip,
+                            clip = playableAsset.clip,
+                            timelineStart = timelineClip.start,
+                            timelineEnd = timelineClip.end,
+                            clipIn = timelineClip.clipIn,
+                            isInfiniteClip = false
+                        });
+                    }
+
+                    if (progressClips.Count <= 0)
+                        continue;
+
+                    progressClips.Sort((a, b) => a.timelineStart.CompareTo(b.timelineStart));
+                    double start = progressClips[0].timelineStart;
+                    double end = progressClips[0].timelineEnd;
+                    for (int i = 1; i < progressClips.Count; i++)
+                    {
+                        start = System.Math.Min(start, progressClips[i].timelineStart);
+                        end = System.Math.Max(end, progressClips[i].timelineEnd);
+                    }
+
+                    result.clips = progressClips;
+                    result.timelineStart = start;
+                    result.timelineEnd = end;
+                    result.timelineDuration = System.Math.Max(0.01, end - start);
+                    result.isInfiniteClip = false;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryFindAnchorTimelineAnimationSource(VFXSplineAnchor anchor, out AnchorTimelineProgressSource result)
+        {
+            result = default;
+            if (anchor == null)
+                return false;
+
+            PlayableDirector[] directors;
+#if UNITY_2023_1_OR_NEWER
+            directors = Object.FindObjectsByType<PlayableDirector>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+#else
+            directors = Object.FindObjectsOfType<PlayableDirector>(true);
+#endif
+
+            Animator targetAnimator = anchor.GetComponent<Animator>();
+            GameObject targetGameObject = anchor.gameObject;
+            Transform targetTransform = anchor.transform;
+
+            for (int d = 0; d < directors.Length; d++)
+            {
+                PlayableDirector director = directors[d];
+                TimelineAsset timeline = director != null ? director.playableAsset as TimelineAsset : null;
+                if (timeline == null)
+                    continue;
+
+                foreach (TrackAsset track in timeline.GetOutputTracks())
+                {
+                    AnimationTrack animationTrack = track as AnimationTrack;
+                    if (animationTrack == null)
+                        continue;
+
+                    Object binding = director.GetGenericBinding(animationTrack);
+                    if (!IsTimelineBindingMatch(binding, targetAnimator, targetGameObject, targetTransform))
+                        continue;
+
+                    if (!animationTrack.inClipMode && animationTrack.infiniteClip != null)
+                    {
+                        float clipLength = Mathf.Max(0.01f, animationTrack.infiniteClip.length);
+                        result.clips = new List<AnchorTimelineProgressClip>()
+                        {
+                            new AnchorTimelineProgressClip()
+                            {
+                                timelineClip = null,
+                                clip = animationTrack.infiniteClip,
+                                timelineStart = 0.0,
+                                timelineEnd = clipLength,
+                                clipIn = 0.0,
+                                isInfiniteClip = true
+                            }
+                        };
+                        result.timelineStart = 0.0;
+                        result.timelineEnd = clipLength;
+                        result.timelineDuration = clipLength;
+                        result.isInfiniteClip = true;
+                        return true;
+                    }
+
+                    List<AnchorTimelineProgressClip> clips = new List<AnchorTimelineProgressClip>();
+                    foreach (TimelineClip timelineClip in animationTrack.GetClips())
+                    {
+                        AnimationPlayableAsset playableAsset = timelineClip != null ? timelineClip.asset as AnimationPlayableAsset : null;
+                        if (playableAsset == null || playableAsset.clip == null)
+                            continue;
+
+                        clips.Add(new AnchorTimelineProgressClip()
+                        {
+                            timelineClip = timelineClip,
+                            clip = playableAsset.clip,
+                            timelineStart = timelineClip.start,
+                            timelineEnd = timelineClip.end,
+                            clipIn = timelineClip.clipIn,
+                            isInfiniteClip = false
+                        });
+                    }
+
+                    if (clips.Count <= 0)
+                        continue;
+
+                    clips.Sort((a, b) => a.timelineStart.CompareTo(b.timelineStart));
+                    double start = clips[0].timelineStart;
+                    double end = clips[0].timelineEnd;
+                    for (int i = 1; i < clips.Count; i++)
+                    {
+                        start = System.Math.Min(start, clips[i].timelineStart);
+                        end = System.Math.Max(end, clips[i].timelineEnd);
+                    }
+
+                    result.clips = clips;
+                    result.timelineStart = start;
+                    result.timelineEnd = end;
+                    result.timelineDuration = System.Math.Max(0.01, end - start);
+                    result.isInfiniteClip = false;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void SampleAnchorTimelineAnimation(VFXSplineAnchor anchor, AnchorTimelineProgressSource source, float bakeTime, float normalizedTime)
+        {
+            if (anchor == null || source.clips == null || source.clips.Count == 0)
+                return;
+
+            double timelineTime = source.timelineStart + bakeTime;
+            AnchorTimelineProgressClip bestClip = default;
+            bool hasClip = false;
+
+            for (int i = 0; i < source.clips.Count; i++)
+            {
+                AnchorTimelineProgressClip progressClip = source.clips[i];
+                if (progressClip.clip == null)
+                    continue;
+
+                if (timelineTime < progressClip.timelineStart || timelineTime > progressClip.timelineEnd)
+                    continue;
+
+                bestClip = progressClip;
+                hasClip = true;
+                break;
+            }
+
+            if (!hasClip)
+            {
+                int index = Mathf.Clamp(Mathf.RoundToInt(normalizedTime * (source.clips.Count - 1)), 0, source.clips.Count - 1);
+                bestClip = source.clips[index];
+                if (bestClip.clip == null)
+                    return;
+            }
+
+            float sourceTime = GetSourceClipTime(null, bestClip, timelineTime, bakeTime);
+            bestClip.clip.SampleAnimation(anchor.gameObject, sourceTime);
+        }
+
+        private static AnchorStateSnapshot CaptureAnchorState(VFXSplineAnchor anchor)
+        {
+            AnchorStateSnapshot snapshot = new AnchorStateSnapshot();
+            if (anchor == null)
+                return snapshot;
+
+            snapshot.componentJson = EditorJsonUtility.ToJson(anchor);
+            snapshot.hierarchyTransforms = CaptureTransformSnapshots(anchor.transform.GetComponentsInChildren<Transform>(true));
+            return snapshot;
+        }
+
+        private static void RestoreAnchorState(VFXSplineAnchor anchor, AnchorStateSnapshot snapshot)
+        {
+            if (anchor == null)
+                return;
+
+            if (!string.IsNullOrEmpty(snapshot.componentJson))
+                EditorJsonUtility.FromJsonOverwrite(snapshot.componentJson, anchor);
+
+            RestoreTransformSnapshots(snapshot.hierarchyTransforms);
+        }
+
+        private static bool IsTimelineBindingMatch(Object binding, Animator targetAnimator, GameObject targetGameObject, Transform targetTransform)
+        {
+            if (binding == null)
+                return false;
+            if (targetAnimator != null && binding == targetAnimator)
+                return true;
+            if (binding == targetGameObject || binding == targetTransform)
+                return true;
+
+            GameObject boundGameObject = null;
+            if (binding is Component component)
+                boundGameObject = component.gameObject;
+            else if (binding is GameObject gameObject)
+                boundGameObject = gameObject;
+
+            return boundGameObject != null && boundGameObject == targetGameObject;
+        }
+
+        private static AnimationCurve FindProgressCurve(AnimationClip clip)
+        {
+            if (clip == null)
+                return null;
+
+            EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(clip);
+            for (int i = 0; i < bindings.Length; i++)
+            {
+                EditorCurveBinding b = bindings[i];
+                bool typeMatch = b.type == typeof(VFXSplineAnimator) || b.type.Name == "VFXSplineAnimator";
+                bool propertyMatch = b.propertyName == "progress" || b.propertyName.EndsWith(".progress");
+                if (typeMatch && propertyMatch)
+                    return AnimationUtility.GetEditorCurve(clip, b);
+            }
+
+            for (int i = 0; i < bindings.Length; i++)
+            {
+                EditorCurveBinding b = bindings[i];
+                if (b.propertyName == "progress" || b.propertyName.EndsWith(".progress"))
+                    return AnimationUtility.GetEditorCurve(clip, b);
+            }
+
+            return null;
+        }
+
+        private static int WriteChildTransformCurves(AnimationClip clip, VFXSplineAnchor anchor, List<AnchorBakeSample> timeSamples, bool bakePosition, bool bakeRotation, bool bakeScale, float bakeDuration)
+        {
+            Transform root = anchor != null ? anchor.transform : null;
+            if (root == null || timeSamples == null || timeSamples.Count == 0)
+                return 0;
+
+            Transform[] transforms = root.GetComponentsInChildren<Transform>(true);
+            Dictionary<Transform, List<AnchorBakeSample>> animatedSamples = anchor.bakeChildAnimationClip != null
+                ? BuildAnimatedLocalSampleMap(anchor, transforms, timeSamples, bakeDuration)
+                : null;
+            if (animatedSamples == null && anchor.bakeAutoSampleChildAnimations)
+                animatedSamples = BuildAnimatedLocalSampleMap(anchor, transforms, timeSamples, bakeDuration);
+
+            int count = 0;
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                Transform child = transforms[i];
+                if (child == null || child == root)
+                    continue;
+
+                string path = AnimationUtility.CalculateTransformPath(child, root);
+                if (string.IsNullOrEmpty(path))
+                    continue;
+
+                List<AnchorBakeSample> childSamples;
+                if (animatedSamples == null || !animatedSamples.TryGetValue(child, out childSamples))
+                {
+                    childSamples = BuildStaticLocalSamples(child, timeSamples);
+                }
+                else if (!HasAnimatedVariation(childSamples, bakePosition, bakeRotation, bakeScale))
+                {
+                    Debug.LogWarning("[VFX Timeline Spline Tool] Child animation sampled no transform variation: " + path + ". Check whether the child animation clip paths match this hierarchy.", child);
+                }
+                WriteTransformCurves(clip, path, childSamples, bakePosition, bakeRotation, bakeScale);
+                count++;
+            }
+
+            return count;
+        }
+
+        private static Dictionary<Transform, List<AnchorBakeSample>> BuildAnimatedLocalSampleMap(VFXSplineAnchor anchor, Transform[] transforms, List<AnchorBakeSample> timeSamples, float bakeDuration)
+        {
+            Dictionary<Transform, List<AnchorBakeSample>> result = new Dictionary<Transform, List<AnchorBakeSample>>();
+            AnimationClip sourceClip = anchor != null ? anchor.bakeChildAnimationClip : null;
+            if (anchor == null || transforms == null || timeSamples == null)
+                return result;
+
+            Dictionary<GameObject, AnimationClip> childAnimationSources = sourceClip == null
+                ? FindChildAnimationSources(anchor.transform, transforms)
+                : null;
+            if (sourceClip == null && (childAnimationSources == null || childAnimationSources.Count == 0))
+                return result;
+
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                Transform tr = transforms[i];
+                if (tr != null && tr != anchor.transform)
+                    result[tr] = new List<AnchorBakeSample>(timeSamples.Count);
+            }
+
+            if (result.Count == 0)
+                return result;
+
+            Dictionary<Transform, TransformSnapshot> originalTransforms = CaptureTransformSnapshots(transforms);
+            try
+            {
+                for (int sampleIndex = 0; sampleIndex < timeSamples.Count; sampleIndex++)
+                {
+                    if (sourceClip != null)
+                    {
+                        float sourceTime = GetChildAnimationSampleTime(anchor, sourceClip, timeSamples[sampleIndex].time, bakeDuration);
+                        sourceClip.SampleAnimation(anchor.gameObject, sourceTime);
+                    }
+                    else
+                    {
+                        foreach (KeyValuePair<GameObject, AnimationClip> pair in childAnimationSources)
+                        {
+                            if (pair.Key == null || pair.Value == null)
+                                continue;
+
+                            float childSourceTime = GetChildAnimationSampleTime(anchor, pair.Value, timeSamples[sampleIndex].time, bakeDuration);
+                            pair.Value.SampleAnimation(pair.Key, childSourceTime);
+                        }
+                    }
+
+                    for (int i = 0; i < transforms.Length; i++)
+                    {
+                        Transform tr = transforms[i];
+                        if (tr == null || tr == anchor.transform)
+                            continue;
+
+                        List<AnchorBakeSample> samples;
+                        if (!result.TryGetValue(tr, out samples))
+                            continue;
+
+                        AnchorBakeSample sample = new AnchorBakeSample();
+                        sample.time = timeSamples[sampleIndex].time;
+                        sample.localPosition = tr.localPosition;
+                        sample.localRotation = NormalizeQuaternion(tr.localRotation);
+                        sample.localScale = tr.localScale;
+                        samples.Add(sample);
+                    }
+                }
+            }
+            finally
+            {
+                RestoreTransformSnapshots(originalTransforms);
+            }
+
+            return result;
+        }
+
+        private static Dictionary<Transform, TransformSnapshot> CaptureTransformSnapshots(Transform[] transforms)
+        {
+            Dictionary<Transform, TransformSnapshot> snapshots = new Dictionary<Transform, TransformSnapshot>();
+            if (transforms == null)
+                return snapshots;
+
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                Transform tr = transforms[i];
+                if (tr == null || snapshots.ContainsKey(tr))
+                    continue;
+
+                TransformSnapshot snapshot = new TransformSnapshot();
+                snapshot.localPosition = tr.localPosition;
+                snapshot.localRotation = tr.localRotation;
+                snapshot.localScale = tr.localScale;
+                snapshots.Add(tr, snapshot);
+            }
+
+            return snapshots;
+        }
+
+        private static void RestoreTransformSnapshots(Dictionary<Transform, TransformSnapshot> snapshots)
+        {
+            if (snapshots == null)
+                return;
+
+            foreach (KeyValuePair<Transform, TransformSnapshot> pair in snapshots)
+            {
+                Transform tr = pair.Key;
+                if (tr == null)
+                    continue;
+
+                tr.localPosition = pair.Value.localPosition;
+                tr.localRotation = pair.Value.localRotation;
+                tr.localScale = pair.Value.localScale;
+            }
+        }
+
+        private static bool HasAnimatedVariation(List<AnchorBakeSample> samples, bool checkPosition, bool checkRotation, bool checkScale)
+        {
+            if (samples == null || samples.Count <= 1)
+                return false;
+
+            AnchorBakeSample first = samples[0];
+            for (int i = 1; i < samples.Count; i++)
+            {
+                AnchorBakeSample sample = samples[i];
+                if (checkPosition && Vector3.Distance(first.localPosition, sample.localPosition) > 0.00001f)
+                    return true;
+                if (checkRotation && Quaternion.Angle(first.localRotation, sample.localRotation) > 0.001f)
+                    return true;
+                if (checkScale && Vector3.Distance(first.localScale, sample.localScale) > 0.00001f)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static Dictionary<GameObject, AnimationClip> FindChildAnimationSources(Transform root, Transform[] transforms)
+        {
+            Dictionary<GameObject, AnimationClip> result = new Dictionary<GameObject, AnimationClip>();
+            if (root == null || transforms == null)
+                return result;
+
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                Transform tr = transforms[i];
+                if (tr == null || tr == root)
+                    continue;
+
+                AnimationClip clip = FindAnimationClipOnObject(tr.gameObject);
+                if (clip != null && !result.ContainsKey(tr.gameObject))
+                    result.Add(tr.gameObject, clip);
+            }
+
+            return result;
+        }
+
+        private static AnimationClip FindAnimationClipOnObject(GameObject target)
+        {
+            if (target == null)
+                return null;
+
+            Animation legacyAnimation = target.GetComponent<Animation>();
+            if (legacyAnimation != null && legacyAnimation.clip != null)
+                return legacyAnimation.clip;
+
+            Animator animator = target.GetComponent<Animator>();
+            if (animator != null && animator.runtimeAnimatorController != null)
+            {
+                AnimationClip[] clips = animator.runtimeAnimatorController.animationClips;
+                for (int i = 0; i < clips.Length; i++)
+                {
+                    if (clips[i] != null)
+                        return clips[i];
+                }
+            }
+
+            return null;
+        }
+
+        private static float GetChildAnimationSampleTime(VFXSplineAnchor anchor, AnimationClip sourceClip, float bakeTime, float bakeDuration)
+        {
+            float clipLength = Mathf.Max(0.0001f, sourceClip.length);
+            if (anchor.bakeChildAnimationUseNormalizedTime)
+            {
+                float normalized = bakeDuration <= 0.0001f ? 0f : Mathf.Clamp01(bakeTime / bakeDuration);
+                return normalized * clipLength;
+            }
+
+            if (anchor.bakeChildAnimationLoop)
+                return Mathf.Repeat(bakeTime, clipLength);
+
+            return Mathf.Clamp(bakeTime, 0f, clipLength);
+        }
+
+        private static List<AnchorBakeSample> BuildStaticLocalSamples(Transform target, List<AnchorBakeSample> timeSamples)
+        {
+            List<AnchorBakeSample> samples = new List<AnchorBakeSample>(timeSamples.Count);
+            Vector3 localPosition = target.localPosition;
+            Quaternion localRotation = NormalizeQuaternion(target.localRotation);
+            Vector3 localScale = target.localScale;
+
+            for (int i = 0; i < timeSamples.Count; i++)
+            {
+                AnchorBakeSample sample = new AnchorBakeSample();
+                sample.time = timeSamples[i].time;
+                sample.localPosition = localPosition;
+                sample.localRotation = localRotation;
+                sample.localScale = localScale;
+                samples.Add(sample);
+            }
+
+            return samples;
+        }
+
+        private static void WriteTransformCurves(AnimationClip clip, string path, List<AnchorBakeSample> samples, bool bakePosition, bool bakeRotation, bool bakeScale)
+        {
+            if (clip == null || samples == null || samples.Count == 0)
+                return;
+
+            AnimationCurve px = new AnimationCurve();
+            AnimationCurve py = new AnimationCurve();
+            AnimationCurve pz = new AnimationCurve();
+            AnimationCurve rx = new AnimationCurve();
+            AnimationCurve ry = new AnimationCurve();
+            AnimationCurve rz = new AnimationCurve();
+            AnimationCurve rw = new AnimationCurve();
+            AnimationCurve sx = new AnimationCurve();
+            AnimationCurve sy = new AnimationCurve();
+            AnimationCurve sz = new AnimationCurve();
+
+            for (int i = 0; i < samples.Count; i++)
+            {
+                AnchorBakeSample sample = samples[i];
+                if (bakePosition)
+                {
+                    px.AddKey(sample.time, sample.localPosition.x);
+                    py.AddKey(sample.time, sample.localPosition.y);
+                    pz.AddKey(sample.time, sample.localPosition.z);
+                }
+
+                if (bakeRotation)
+                {
+                    Quaternion q = NormalizeQuaternion(sample.localRotation);
+                    rx.AddKey(sample.time, q.x);
+                    ry.AddKey(sample.time, q.y);
+                    rz.AddKey(sample.time, q.z);
+                    rw.AddKey(sample.time, q.w);
+                }
+
+                if (bakeScale)
+                {
+                    sx.AddKey(sample.time, sample.localScale.x);
+                    sy.AddKey(sample.time, sample.localScale.y);
+                    sz.AddKey(sample.time, sample.localScale.z);
+                }
+            }
+
+            if (bakePosition)
+            {
+                SetTransformCurve(clip, path, "m_LocalPosition.x", px);
+                SetTransformCurve(clip, path, "m_LocalPosition.y", py);
+                SetTransformCurve(clip, path, "m_LocalPosition.z", pz);
+            }
+
+            if (bakeRotation)
+            {
+                SetTransformCurve(clip, path, "m_LocalRotation.x", rx);
+                SetTransformCurve(clip, path, "m_LocalRotation.y", ry);
+                SetTransformCurve(clip, path, "m_LocalRotation.z", rz);
+                SetTransformCurve(clip, path, "m_LocalRotation.w", rw);
+            }
+
+            if (bakeScale)
+            {
+                SetTransformCurve(clip, path, "m_LocalScale.x", sx);
+                SetTransformCurve(clip, path, "m_LocalScale.y", sy);
+                SetTransformCurve(clip, path, "m_LocalScale.z", sz);
+            }
+        }
+
+        private static List<AnchorBakeSample> OptimizeSamples(List<AnchorBakeSample> input, bool checkPosition, bool checkRotation, float positionTolerance, float rotationTolerance)
+        {
+            if (input == null || input.Count <= 2)
+                return input;
+
+            List<AnchorBakeSample> result = new List<AnchorBakeSample>();
+            result.Add(input[0]);
+
+            for (int i = 1; i < input.Count - 1; i++)
+            {
+                AnchorBakeSample prev = input[i - 1];
+                AnchorBakeSample current = input[i];
+                AnchorBakeSample next = input[i + 1];
+
+                float span = next.time - prev.time;
+                if (span <= 0.0001f)
+                {
+                    result.Add(current);
+                    continue;
+                }
+
+                float t = Mathf.Clamp01((current.time - prev.time) / span);
+                bool keep = false;
+
+                if (checkPosition)
+                {
+                    Vector3 estimatedPosition = Vector3.Lerp(prev.localPosition, next.localPosition, t);
+                    keep |= Vector3.Distance(estimatedPosition, current.localPosition) > positionTolerance;
+                }
+
+                if (checkRotation)
+                {
+                    Quaternion estimatedRotation = Quaternion.Slerp(prev.localRotation, next.localRotation, t);
+                    keep |= Quaternion.Angle(estimatedRotation, current.localRotation) > rotationTolerance;
+                }
+
+                if (keep)
+                    result.Add(current);
+            }
+
+            result.Add(input[input.Count - 1]);
+            return result;
+        }
+
+        private static void SetTransformCurve(AnimationClip clip, string propertyName, AnimationCurve curve)
+        {
+            SetTransformCurve(clip, "", propertyName, curve);
+        }
+
+        private static void SetTransformCurve(AnimationClip clip, string path, string propertyName, AnimationCurve curve)
+        {
+            EditorCurveBinding binding = new EditorCurveBinding
+            {
+                path = path,
+                type = typeof(Transform),
+                propertyName = propertyName
+            };
+            AnimationUtility.SetEditorCurve(clip, binding, curve);
+        }
+
+        private static Quaternion NormalizeQuaternion(Quaternion q)
+        {
+            float mag = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+            if (mag <= 0.000001f)
+                return Quaternion.identity;
+
+            float inv = 1f / mag;
+            return new Quaternion(q.x * inv, q.y * inv, q.z * inv, q.w * inv);
+        }
+
+        private static string NormalizeAssetFolder(string folder)
+        {
+            if (string.IsNullOrEmpty(folder))
+                return "Assets/Animations/SplineBakes";
+
+            folder = folder.Replace('\\', '/').TrimEnd('/');
+            if (folder.StartsWith(Application.dataPath))
+                folder = "Assets" + folder.Substring(Application.dataPath.Length);
+            if (!folder.StartsWith("Assets"))
+                folder = "Assets/" + folder.TrimStart('/');
+
+            return string.IsNullOrEmpty(folder) ? "Assets/Animations/SplineBakes" : folder;
+        }
+
+        private static void EnsureAssetFolder(string folder)
+        {
+            folder = NormalizeAssetFolder(folder);
+            if (AssetDatabase.IsValidFolder(folder))
+                return;
+
+            string[] parts = folder.Split('/');
+            string current = parts[0];
+            for (int i = 1; i < parts.Length; i++)
+            {
+                string next = current + "/" + parts[i];
+                if (!AssetDatabase.IsValidFolder(next))
+                    AssetDatabase.CreateFolder(current, parts[i]);
+                current = next;
+            }
+        }
+
+        private static string SanitizeFileName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return "AnchorBake";
+
+            char[] invalidChars = Path.GetInvalidFileNameChars();
+            for (int i = 0; i < invalidChars.Length; i++)
+                name = name.Replace(invalidChars[i], '_');
+
+            return string.IsNullOrEmpty(name.Trim()) ? "AnchorBake" : name.Trim();
         }
 
         private void OnSceneGUI()
