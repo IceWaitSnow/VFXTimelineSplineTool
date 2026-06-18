@@ -238,9 +238,12 @@ namespace VFXTimelineSplineTool.EditorTools
                     VFXSplinePointAPI.EnterObjectMode();
             }
 
+            string toggleKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.TogglePointModeShortcut);
+            string appendKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.AppendModeShortcut);
+            string menuKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.ContextMenuShortcut);
             EditorGUILayout.HelpBox(VFXSplinePointAPI.IsPointMode
-                ? "Point Mode：隐藏 Unity Transform Gizmo，点击 Scene 空白处后仍保持当前 Spline 可编辑。在 Scene View 按 P 或 Esc 返回 Object Mode。"
-                : "Object Mode：显示 Unity Transform Gizmo，用来移动整条 Spline。在 Scene View 按 P，或点击“编辑控制点”进入点编辑。",
+                ? "点编辑模式：隐藏 Unity Transform Gizmo，点击 Scene 空白处后仍保持当前 Spline 可编辑。Scene View 快捷键：" + toggleKey + " 切换模式，" + appendKey + " 追加点模式，" + menuKey + " 打开菜单，Esc 返回物体模式。"
+                : "物体模式：显示 Unity Transform Gizmo，用来移动整条 Spline。Scene View 按 " + toggleKey + "，或点击“编辑控制点”进入点编辑。",
                 MessageType.None);
         }
 
@@ -258,7 +261,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 new GUIContent(labels[1], tooltips[1])
             };
             int index = current == VFXSplinePointEditMode.Points ? 1 : 0;
-            index = EditorGUILayout.Popup(new GUIContent("编辑模式", "切换移动整条 Spline 物体，或编辑 Spline 控制点。Scene View 中也可以按 P 切换。"), index, contents);
+            index = EditorGUILayout.Popup(new GUIContent("编辑模式", "切换移动整条 Spline 物体，或编辑 Spline 控制点。Scene View 中也可以按 " + VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.TogglePointModeShortcut) + " 切换。"), index, contents);
             return index == 1 ? VFXSplinePointEditMode.Points : VFXSplinePointEditMode.Object;
         }
 
@@ -986,6 +989,8 @@ namespace VFXTimelineSplineTool.EditorTools
                 spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, count - 1);
             NormalizeSelectedPointIndices(spline, count);
 
+            DrawSceneStatusHint(spline, count);
+
             if (HandleAppendPointModeShortcut(spline))
                 return;
 
@@ -1130,6 +1135,43 @@ namespace VFXTimelineSplineTool.EditorTools
             return true;
         }
 
+        private static void DrawSceneStatusHint(VFXSimpleSpline spline, int count)
+        {
+            Event e = Event.current;
+            if (e == null || e.type != EventType.Repaint || spline == null)
+                return;
+
+            bool pointMode = VFXSplinePointAPI.IsPointMode;
+            bool appendModeActive = appendPointMode && appendPointModeSpline == spline;
+            int selectedCount = spline.selectedPointIndices != null ? spline.selectedPointIndices.Count : 0;
+            string modeName = pointMode ? (appendModeActive ? "\u8ffd\u52a0\u70b9\u6a21\u5f0f" : "\u70b9\u7f16\u8f91\u6a21\u5f0f") : "\u7269\u4f53\u6a21\u5f0f";
+            string pathName = spline.pathMode == VFXSplinePathMode.Bezier ? "Bezier" : "Catmull-Rom";
+            string selectionInfo = selectedCount > 1 ? "\u5df2\u9009 " + selectedCount + " \u4e2a\u70b9" : "\u5f53\u524d\u70b9 " + Mathf.Clamp(spline.selectedPointIndex, 0, Mathf.Max(0, count - 1));
+            string title = "VFX Spline | " + modeName + " | " + pathName + " | " + selectionInfo;
+            string toggleKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.TogglePointModeShortcut);
+            string appendKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.AppendModeShortcut);
+            string menuKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.ContextMenuShortcut);
+            string shortcuts = appendModeActive
+                ? "\u5de6\u952e\uff1a\u6dfb\u52a0\u70b9    " + appendKey + " / Esc\uff1a\u9000\u51fa\u8ffd\u52a0    Alt + \u9f20\u6807\uff1a\u89c6\u89d2"
+                : toggleKey + "\uff1a\u5207\u6362\u70b9\u7f16\u8f91    " + appendKey + "\uff1a\u8ffd\u52a0\u6a21\u5f0f    " + menuKey + "\uff1a\u83dc\u5355    Ctrl\uff1a\u591a\u9009/\u6846\u9009    F\uff1a\u805a\u7126    Del\uff1a\u5220\u9664";
+
+            Rect rect = new Rect(10f, 10f, 620f, 44f);
+            Handles.BeginGUI();
+            Color oldColor = GUI.color;
+            GUI.color = new Color(0.1f, 0.1f, 0.1f, 0.82f);
+            GUI.Box(rect, GUIContent.none, EditorStyles.helpBox);
+            GUI.color = oldColor;
+
+            GUIStyle titleStyle = new GUIStyle(EditorStyles.boldLabel);
+            titleStyle.normal.textColor = Color.white;
+            GUIStyle bodyStyle = new GUIStyle(EditorStyles.miniLabel);
+            bodyStyle.normal.textColor = new Color(0.86f, 0.86f, 0.86f, 1f);
+
+            GUI.Label(new Rect(rect.x + 8f, rect.y + 5f, rect.width - 16f, 18f), title, titleStyle);
+            GUI.Label(new Rect(rect.x + 8f, rect.y + 24f, rect.width - 16f, 16f), shortcuts, bodyStyle);
+            Handles.EndGUI();
+        }
+
         private static bool HandleAppendPointModeShortcut(VFXSimpleSpline spline)
         {
             Event e = Event.current;
@@ -1149,7 +1191,7 @@ namespace VFXTimelineSplineTool.EditorTools
             if (!VFXSplinePointAPI.IsPointMode)
                 return false;
 
-            if (!e.shift && !e.control && !e.command && !e.alt && e.keyCode == KeyCode.A)
+            if (VFXSplinePointAPI.IsPlainKey(e, VFXSplinePointAPI.AppendModeShortcut))
             {
                 appendPointMode = !currentSplineOwnsMode;
                 appendPointModeSpline = appendPointMode ? spline : null;
@@ -1198,7 +1240,7 @@ namespace VFXTimelineSplineTool.EditorTools
             if (e == null || spline == null || e.type != EventType.KeyDown)
                 return false;
 
-            if (e.shift || e.control || e.command || e.alt || e.keyCode != KeyCode.M)
+            if (!VFXSplinePointAPI.IsPlainKey(e, VFXSplinePointAPI.ContextMenuShortcut))
                 return false;
 
             int pointIndex;
@@ -1256,13 +1298,14 @@ namespace VFXTimelineSplineTool.EditorTools
 
         private static void DrawAppendPointModeHint(Vector2 mousePosition)
         {
-            Rect rect = new Rect(mousePosition.x + 16f, mousePosition.y + 16f, 210f, 24f);
+            string appendKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.AppendModeShortcut);
+            Rect rect = new Rect(mousePosition.x + 16f, mousePosition.y + 16f, 230f, 24f);
             Handles.BeginGUI();
             Color oldColor = GUI.color;
             GUI.color = new Color(0.12f, 0.12f, 0.12f, 0.92f);
             GUI.Box(rect, GUIContent.none, EditorStyles.toolbar);
             GUI.color = oldColor;
-            GUI.Label(rect, " Append Mode: Left Click / A / Esc", EditorStyles.whiteLabel);
+            GUI.Label(rect, " \u8ffd\u52a0\u70b9\uff1a\u5de6\u952e / " + appendKey + " / Esc", EditorStyles.whiteLabel);
             Handles.EndGUI();
         }
 

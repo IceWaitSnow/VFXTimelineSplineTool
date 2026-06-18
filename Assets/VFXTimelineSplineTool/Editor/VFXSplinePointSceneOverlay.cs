@@ -2,9 +2,6 @@
 #if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
-#if UNITY_2019_1_OR_NEWER
-using UnityEditor.ShortcutManagement;
-#endif
 
 namespace VFXTimelineSplineTool.EditorTools
 {
@@ -30,14 +27,6 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             VFXSplinePointAPI.EnterObjectMode();
         }
-
-#if UNITY_2019_1_OR_NEWER
-        [Shortcut("VFX Timeline Spline/Toggle Point Edit Mode", typeof(SceneView), KeyCode.P)]
-        private static void TogglePointEditModeShortcut()
-        {
-            VFXSplinePointAPI.ToggleEditMode();
-        }
-#endif
 
         private static void OnGUI(SceneView view)
         {

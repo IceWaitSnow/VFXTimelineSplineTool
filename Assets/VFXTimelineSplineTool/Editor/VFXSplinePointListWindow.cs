@@ -115,7 +115,10 @@ namespace VFXTimelineSplineTool.EditorTools
                     VFXSplinePointAPI.EnterObjectMode();
             }
 
-            EditorGUILayout.HelpBox("Object Mode 显示 Unity Transform Gizmo，用来移动整条 Spline。Point Mode 会锁定当前 Spline，即使点击 Scene 空白处也继续编辑。快捷键：Scene View 中按 P 切换点编辑，Esc 返回 Object Mode，F 聚焦当前点，Shift+A 添加点，Delete 删除当前点。", MessageType.None);
+            string toggleKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.TogglePointModeShortcut);
+            string appendKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.AppendModeShortcut);
+            string menuKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.ContextMenuShortcut);
+            EditorGUILayout.HelpBox("物体模式显示 Unity Transform Gizmo，用来移动整条 Spline。点编辑模式会锁定当前 Spline，即使点击 Scene 空白处也继续编辑。快捷键：" + toggleKey + " 切换点编辑，" + appendKey + " 追加点模式，" + menuKey + " 打开菜单，Esc 返回物体模式，F 聚焦当前点，Delete 删除当前点。", MessageType.None);
         }
 
         private void DrawToolbar(int count)

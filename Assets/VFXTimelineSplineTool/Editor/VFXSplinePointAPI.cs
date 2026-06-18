@@ -20,6 +20,9 @@ namespace VFXTimelineSplineTool.EditorTools
         private const string ActiveSplineIdKey = "VFXTimelineSplineTool.PointOverlay.ActiveSplineId";
         private const string PickSizeMultiplierKey = "VFXTimelineSplineTool.PointOverlay.PickSizeMultiplier";
         private const string LargerFirstPointKey = "VFXTimelineSplineTool.PointOverlay.LargerFirstPoint";
+        private const string TogglePointModeShortcutKey = "VFXTimelineSplineTool.Shortcut.TogglePointMode";
+        private const string AppendModeShortcutKey = "VFXTimelineSplineTool.Shortcut.AppendMode";
+        private const string ContextMenuShortcutKey = "VFXTimelineSplineTool.Shortcut.ContextMenu";
         private static bool hasStoredToolsHidden;
         private static bool previousToolsHidden;
 
@@ -92,6 +95,47 @@ namespace VFXTimelineSplineTool.EditorTools
                 EditorPrefs.SetBool(LargerFirstPointKey, value);
                 SceneView.RepaintAll();
             }
+        }
+
+        public static KeyCode TogglePointModeShortcut
+        {
+            get { return GetShortcut(TogglePointModeShortcutKey, KeyCode.P); }
+            set { SetShortcut(TogglePointModeShortcutKey, value, KeyCode.P); }
+        }
+
+        public static KeyCode AppendModeShortcut
+        {
+            get { return GetShortcut(AppendModeShortcutKey, KeyCode.A); }
+            set { SetShortcut(AppendModeShortcutKey, value, KeyCode.A); }
+        }
+
+        public static KeyCode ContextMenuShortcut
+        {
+            get { return GetShortcut(ContextMenuShortcutKey, KeyCode.M); }
+            set { SetShortcut(ContextMenuShortcutKey, value, KeyCode.M); }
+        }
+
+        public static void ResetShortcutSettings()
+        {
+            TogglePointModeShortcut = KeyCode.P;
+            AppendModeShortcut = KeyCode.A;
+            ContextMenuShortcut = KeyCode.M;
+        }
+
+        public static string GetShortcutLabel(KeyCode key)
+        {
+            return key == KeyCode.None ? "-" : key.ToString();
+        }
+
+        private static KeyCode GetShortcut(string key, KeyCode fallback)
+        {
+            return (KeyCode)EditorPrefs.GetInt(key, (int)fallback);
+        }
+
+        private static void SetShortcut(string key, KeyCode value, KeyCode fallback)
+        {
+            EditorPrefs.SetInt(key, (int)(value == KeyCode.None ? fallback : value));
+            SceneView.RepaintAll();
         }
 
         public static VFXSimpleSpline GetSelectedSpline()
@@ -389,6 +433,13 @@ namespace VFXTimelineSplineTool.EditorTools
             if (e == null || spline == null || e.type != EventType.KeyDown)
                 return false;
 
+            if (IsPlainKey(e, TogglePointModeShortcut))
+            {
+                ToggleEditMode();
+                e.Use();
+                return true;
+            }
+
             if (e.keyCode == KeyCode.Escape && IsPointMode)
             {
                 EnterObjectMode();
@@ -406,7 +457,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 return true;
             }
 
-            if (e.shift && e.keyCode == KeyCode.A)
+            if (e.shift && !e.control && !e.command && !e.alt && e.keyCode == AppendModeShortcut)
             {
                 AddPointAtEnd(spline);
                 e.Use();
@@ -421,6 +472,17 @@ namespace VFXTimelineSplineTool.EditorTools
             }
 
             return false;
+        }
+
+        public static bool IsPlainKey(Event e, KeyCode keyCode)
+        {
+            return e != null &&
+                   keyCode != KeyCode.None &&
+                   !e.shift &&
+                   !e.control &&
+                   !e.command &&
+                   !e.alt &&
+                   e.keyCode == keyCode;
         }
     }
 }
