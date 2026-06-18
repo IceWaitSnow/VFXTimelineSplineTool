@@ -279,10 +279,44 @@ namespace VFXTimelineSplineTool.EditorTools
                 return;
 
             Undo.RecordObject(spline, "Add Spline Point");
-            spline.AddPoint();
+            Vector3 worldPosition;
+            if (TryGetMouseWorldPointOnEditPlane(spline, out worldPosition))
+                spline.AppendPointAtWorldPosition(worldPosition);
+            else
+                spline.AddPoint();
+
             spline.selectedPointIndex = Mathf.Clamp(spline.GetActivePointCount() - 1, 0, spline.GetActivePointCount() - 1);
             EditorUtility.SetDirty(spline);
             SceneView.RepaintAll();
+        }
+
+        private static bool TryGetMouseWorldPointOnEditPlane(VFXSimpleSpline spline, out Vector3 worldPosition)
+        {
+            worldPosition = Vector3.zero;
+            Event e = Event.current;
+            if (spline == null || e == null)
+                return false;
+
+            SceneView sceneView = SceneView.currentDrawingSceneView != null ? SceneView.currentDrawingSceneView : SceneView.lastActiveSceneView;
+            if (sceneView == null || sceneView.camera == null)
+                return false;
+
+            Ray ray = HandleUtility.GUIPointToWorldRay(e.mousePosition);
+            Vector3 planePoint = spline.transform.position;
+            int count = spline.GetActivePointCount();
+            if (count > 0)
+            {
+                int selectedIndex = Mathf.Clamp(spline.selectedPointIndex, 0, count - 1);
+                planePoint = spline.GetEffectiveWorldPoint(selectedIndex);
+            }
+
+            Plane plane = new Plane(sceneView.camera.transform.forward, planePoint);
+            float distance;
+            if (!plane.Raycast(ray, out distance))
+                return false;
+
+            worldPosition = ray.GetPoint(distance);
+            return true;
         }
 
         public static void InsertPointAfter()

@@ -358,7 +358,10 @@ namespace VFXTimelineSplineTool.EditorTools
                     spline.ConvertCatmullRomToBezier();
                 int activePointCount = spline.GetActivePointCount();
                 if (activePointCount > 0)
+                {
                     spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, activePointCount - 1);
+                    spline.selectedPointIndices = new List<int>() { spline.selectedPointIndex };
+                }
                 spline.MarkDistanceCacheDirty();
             });
         }
@@ -870,6 +873,14 @@ namespace VFXTimelineSplineTool.EditorTools
     public static class VFXSplineSceneDrawer
     {
         private static double suppressBezierToolbarUntil;
+        private static Rect currentBezierToolbarRect;
+        private static int currentBezierToolbarButtonIndex;
+        private static bool boxSelecting;
+        private static VFXSimpleSpline boxSelectingSpline;
+        private static Vector2 boxSelectStart;
+        private static Vector2 boxSelectCurrent;
+        private static bool appendPointMode;
+        private static VFXSimpleSpline appendPointModeSpline;
         private static readonly List<VFXSimpleSpline> cachedSplines = new List<VFXSimpleSpline>();
         private static bool splinesCacheDirty = true;
 
@@ -973,15 +984,39 @@ namespace VFXTimelineSplineTool.EditorTools
 
             if (spline.selectedPointIndex < 0 || spline.selectedPointIndex >= count)
                 spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, count - 1);
+            NormalizeSelectedPointIndices(spline, count);
+
+            if (HandleAppendPointModeShortcut(spline))
+                return;
 
             if (VFXSplinePointAPI.HandleShortcut(Event.current, spline))
                 return;
 
             if (!VFXSplinePointAPI.IsPointMode)
+            {
+                if (appendPointModeSpline == spline)
+                    appendPointMode = false;
+                return;
+            }
+
+            if (HandlePointContextMenuShortcut(spline, count))
+                return;
+
+            if (HandleAppendPointMode(spline, count))
+                return;
+
+            if (spline.pathMode != VFXSplinePathMode.Bezier && HandleBlankAppendPoint(spline))
+                return;
+
+            if (HandleBoxSelection(spline, count))
                 return;
 
             if (TryForceSelectNearestPoint(spline, count))
                 return;
+
+            bool hasMultiSelection = spline.selectedPointIndices != null && spline.selectedPointIndices.Count > 1;
+            if (hasMultiSelection)
+                DrawMultiPointMoveHandle(spline, count);
 
             for (int i = 0; i < count; i++)
             {
@@ -989,9 +1024,10 @@ namespace VFXTimelineSplineTool.EditorTools
                 bool isDynamicBoundPoint = spline.IsPointDynamicallyBound(i);
                 Transform boundTransform = spline.GetDynamicBindingTransformForPoint(i);
                 bool isPrimarySelectedPoint = spline.selectedPointIndex == i;
-                bool isSelectedPoint = spline.showAllPointHandles || isPrimarySelectedPoint;
+                bool isMultiSelectedPoint = IsPointMultiSelected(spline, i);
+                bool isSelectedPoint = spline.showAllPointHandles || isPrimarySelectedPoint || isMultiSelectedPoint;
                 float baseSize = HandleUtility.GetHandleSize(world) * spline.pointSize;
-                float size = isPrimarySelectedPoint ? baseSize * 1.6f : baseSize;
+                float size = isPrimarySelectedPoint || isMultiSelectedPoint ? baseSize * 1.6f : baseSize;
                 float pickSize = Mathf.Max(size * 1.25f, baseSize * VFXSplinePointAPI.PickSizeMultiplier);
 
                 Handles.color = isDynamicBoundPoint ? new Color(0.2f, 1f, 0.35f, 1f) : (isSelectedPoint ? Color.yellow : spline.pathColor);
@@ -1000,10 +1036,14 @@ namespace VFXTimelineSplineTool.EditorTools
                     HandleBezierPointContextMenu(spline, i, world, size);
 
                 // 未选中的控制点只显示小球；点击小球后，才显示该点的 Position Handle。
+                bool additiveSelect = Event.current != null && (Event.current.control || Event.current.command);
                 if (Handles.Button(world, Quaternion.identity, size, pickSize, Handles.SphereHandleCap))
                 {
                     Undo.RecordObject(spline, "Select Spline Point");
-                    spline.selectedPointIndex = i;
+                    if (additiveSelect)
+                        TogglePointSelection(spline, i);
+                    else
+                        SetSinglePointSelection(spline, i);
                     EditorUtility.SetDirty(spline);
                     SceneView.RepaintAll();
                 }
@@ -1021,12 +1061,15 @@ namespace VFXTimelineSplineTool.EditorTools
                 if (!isSelectedPoint)
                     continue;
 
-                if (spline.pathMode == VFXSplinePathMode.Bezier)
+                if (spline.pathMode == VFXSplinePathMode.Bezier && !hasMultiSelection)
                 {
                     DrawBezierHandles(spline, i, count, world, size);
                     if (isPrimarySelectedPoint)
                         DrawBezierHandleModeToolbar(spline, i, world, size);
                 }
+
+                if (hasMultiSelection)
+                    continue;
 
                 EditorGUI.BeginChangeCheck();
                 Vector3 newWorld = Handles.PositionHandle(world, Quaternion.identity);
@@ -1053,8 +1096,9 @@ namespace VFXTimelineSplineTool.EditorTools
             if (spline.pathMode == VFXSplinePathMode.Bezier)
             {
                 HandleBezierCurveContextMenu(spline);
-                HandleBezierBlankContextMenu(spline);
             }
+
+            HandleBlankAppendPoint(spline);
         }
 
         private static bool TryForceSelectNearestPoint(VFXSimpleSpline spline, int count)
@@ -1081,14 +1125,447 @@ namespace VFXTimelineSplineTool.EditorTools
                 return false;
 
             VFXSplinePointAPI.SelectPoint(spline, bestIndex);
+            SetSinglePointSelection(spline, bestIndex);
             e.Use();
             return true;
+        }
+
+        private static bool HandleAppendPointModeShortcut(VFXSimpleSpline spline)
+        {
+            Event e = Event.current;
+            if (e == null || spline == null || e.type != EventType.KeyDown)
+                return false;
+
+            bool currentSplineOwnsMode = appendPointMode && appendPointModeSpline == spline;
+            if (e.keyCode == KeyCode.Escape && currentSplineOwnsMode)
+            {
+                appendPointMode = false;
+                appendPointModeSpline = null;
+                SceneView.RepaintAll();
+                e.Use();
+                return true;
+            }
+
+            if (!VFXSplinePointAPI.IsPointMode)
+                return false;
+
+            if (!e.shift && !e.control && !e.command && !e.alt && e.keyCode == KeyCode.A)
+            {
+                appendPointMode = !currentSplineOwnsMode;
+                appendPointModeSpline = appendPointMode ? spline : null;
+                SceneView.RepaintAll();
+                e.Use();
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool HandleAppendPointMode(VFXSimpleSpline spline, int count)
+        {
+            if (!appendPointMode || appendPointModeSpline != spline)
+                return false;
+
+            Event e = Event.current;
+            if (e == null)
+                return false;
+
+            if (e.type == EventType.Layout)
+            {
+                HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
+                return false;
+            }
+
+            if (e.type == EventType.Repaint)
+                DrawAppendPointModeHint(e.mousePosition);
+
+            if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
+            {
+                if (count > 0 && IsMouseNearAnyPoint(spline, count, e.mousePosition))
+                    return false;
+
+                AppendPointAtMouse(spline, e.mousePosition);
+                e.Use();
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool HandlePointContextMenuShortcut(VFXSimpleSpline spline, int count)
+        {
+            Event e = Event.current;
+            if (e == null || spline == null || e.type != EventType.KeyDown)
+                return false;
+
+            if (e.shift || e.control || e.command || e.alt || e.keyCode != KeyCode.M)
+                return false;
+
+            int pointIndex;
+            if (TryFindNearestPointIndex(spline, count, e.mousePosition, out pointIndex))
+            {
+                ShowPointContextMenu(spline, pointIndex);
+                e.Use();
+                return true;
+            }
+
+            float rawProgress;
+            if (TryFindNearestRawProgressOnCurve(spline, e.mousePosition, out rawProgress))
+            {
+                ShowCurveContextMenu(spline, rawProgress);
+                e.Use();
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryFindNearestPointIndex(VFXSimpleSpline spline, int count, Vector2 mousePosition, out int pointIndex)
+        {
+            pointIndex = -1;
+            if (spline == null || count <= 0)
+                return false;
+
+            float bestDistance = float.MaxValue;
+            float maxDistance = Mathf.Max(18f, 12f * VFXSplinePointAPI.PickSizeMultiplier);
+            for (int i = 0; i < count; i++)
+            {
+                Vector2 pointGui = HandleUtility.WorldToGUIPoint(spline.GetEffectiveWorldPoint(i));
+                float distance = Vector2.Distance(mousePosition, pointGui);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    pointIndex = i;
+                }
+            }
+
+            return pointIndex >= 0 && bestDistance <= maxDistance;
+        }
+
+        private static void AppendPointAtMouse(VFXSimpleSpline spline, Vector2 mousePosition)
+        {
+            Vector3 worldPosition;
+            if (!TryGetWorldPointOnSplineEditPlane(spline, mousePosition, out worldPosition))
+                return;
+
+            Undo.RecordObject(spline, "Append Spline Point");
+            spline.AppendPointAtWorldPosition(worldPosition);
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private static void DrawAppendPointModeHint(Vector2 mousePosition)
+        {
+            Rect rect = new Rect(mousePosition.x + 16f, mousePosition.y + 16f, 210f, 24f);
+            Handles.BeginGUI();
+            Color oldColor = GUI.color;
+            GUI.color = new Color(0.12f, 0.12f, 0.12f, 0.92f);
+            GUI.Box(rect, GUIContent.none, EditorStyles.toolbar);
+            GUI.color = oldColor;
+            GUI.Label(rect, " Append Mode: Left Click / A / Esc", EditorStyles.whiteLabel);
+            Handles.EndGUI();
+        }
+
+        private static void NormalizeSelectedPointIndices(VFXSimpleSpline spline, int count)
+        {
+            if (spline.selectedPointIndices == null)
+                spline.selectedPointIndices = new List<int>();
+
+            for (int i = spline.selectedPointIndices.Count - 1; i >= 0; i--)
+            {
+                int index = spline.selectedPointIndices[i];
+                if (index < 0 || index >= count || spline.selectedPointIndices.IndexOf(index) != i)
+                    spline.selectedPointIndices.RemoveAt(i);
+            }
+
+            if (spline.selectedPointIndices.Count == 0 && count > 0)
+                spline.selectedPointIndices.Add(Mathf.Clamp(spline.selectedPointIndex, 0, count - 1));
+
+            if (spline.selectedPointIndices.Count > 0)
+                spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndices[spline.selectedPointIndices.Count - 1], 0, count - 1);
+        }
+
+        private static bool IsPointMultiSelected(VFXSimpleSpline spline, int index)
+        {
+            return spline != null && spline.selectedPointIndices != null && spline.selectedPointIndices.Contains(index);
+        }
+
+        private static void SetSinglePointSelection(VFXSimpleSpline spline, int index)
+        {
+            if (spline.selectedPointIndices == null)
+                spline.selectedPointIndices = new List<int>();
+
+            spline.selectedPointIndices.Clear();
+            spline.selectedPointIndices.Add(index);
+            spline.selectedPointIndex = index;
+        }
+
+        private static void TogglePointSelection(VFXSimpleSpline spline, int index)
+        {
+            if (spline.selectedPointIndices == null)
+                spline.selectedPointIndices = new List<int>();
+
+            if (spline.selectedPointIndices.Contains(index))
+            {
+                if (spline.selectedPointIndices.Count > 1)
+                    spline.selectedPointIndices.Remove(index);
+            }
+            else
+            {
+                spline.selectedPointIndices.Add(index);
+            }
+
+            spline.selectedPointIndex = index;
+        }
+
+        private static void DrawMultiPointMoveHandle(VFXSimpleSpline spline, int count)
+        {
+            Vector3 center = Vector3.zero;
+            int selectedCount = 0;
+            for (int i = 0; i < spline.selectedPointIndices.Count; i++)
+            {
+                int index = spline.selectedPointIndices[i];
+                if (index < 0 || index >= count)
+                    continue;
+
+                center += spline.GetEffectiveWorldPoint(index);
+                selectedCount++;
+            }
+
+            if (selectedCount <= 1)
+                return;
+
+            center /= selectedCount;
+            Handles.color = Color.yellow;
+            float size = HandleUtility.GetHandleSize(center) * spline.pointSize * 1.8f;
+            Handles.SphereHandleCap(0, center, Quaternion.identity, size, EventType.Repaint);
+
+            EditorGUI.BeginChangeCheck();
+            Vector3 newCenter = Handles.PositionHandle(center, Quaternion.identity);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Vector3 delta = newCenter - center;
+                Undo.RecordObject(spline, "Move Selected Spline Points");
+
+                for (int i = 0; i < spline.selectedPointIndices.Count; i++)
+                {
+                    int index = spline.selectedPointIndices[i];
+                    if (index < 0 || index >= count)
+                        continue;
+
+                    Transform boundTransform = spline.GetDynamicBindingTransformForPoint(index);
+                    if (spline.IsPointDynamicallyBound(index) && boundTransform != null)
+                    {
+                        Undo.RecordObject(boundTransform, "Move Dynamic Binding Transform");
+                        boundTransform.position += delta;
+                        EditorUtility.SetDirty(boundTransform);
+                    }
+                    else
+                    {
+                        spline.SetActivePointWorldPosition(index, spline.GetEffectiveWorldPoint(index) + delta);
+                    }
+                }
+
+                spline.MarkDistanceCacheDirty();
+                EditorUtility.SetDirty(spline);
+                SceneView.RepaintAll();
+            }
+        }
+
+        private static bool HandleBoxSelection(VFXSimpleSpline spline, int count)
+        {
+            Event e = Event.current;
+            if (e == null || spline == null || count <= 0)
+                return false;
+
+            bool modifier = e.control || e.command;
+            if (!boxSelecting && modifier && e.type == EventType.MouseDown && e.button == 0 && !IsMouseNearAnyPoint(spline, count, e.mousePosition))
+            {
+                boxSelecting = true;
+                boxSelectingSpline = spline;
+                boxSelectStart = e.mousePosition;
+                boxSelectCurrent = e.mousePosition;
+                e.Use();
+                return true;
+            }
+
+            if (!boxSelecting || boxSelectingSpline != spline)
+                return false;
+
+            if (e.type == EventType.MouseDrag)
+            {
+                boxSelectCurrent = e.mousePosition;
+                SceneView.RepaintAll();
+                e.Use();
+                return true;
+            }
+
+            if (e.type == EventType.Repaint)
+                DrawBoxSelectionRect();
+
+            if (e.type == EventType.MouseUp && e.button == 0)
+            {
+                Rect rect = GetBoxSelectionRect();
+                List<int> selected = new List<int>();
+                for (int i = 0; i < count; i++)
+                {
+                    Vector2 pointGui = HandleUtility.WorldToGUIPoint(spline.GetEffectiveWorldPoint(i));
+                    if (rect.Contains(pointGui, true))
+                        selected.Add(i);
+                }
+
+                if (selected.Count > 0)
+                {
+                    Undo.RecordObject(spline, "Box Select Spline Points");
+                    spline.selectedPointIndices = selected;
+                    spline.selectedPointIndex = selected[selected.Count - 1];
+                    EditorUtility.SetDirty(spline);
+                }
+
+                boxSelecting = false;
+                boxSelectingSpline = null;
+                SceneView.RepaintAll();
+                e.Use();
+                return true;
+            }
+
+            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
+            {
+                boxSelecting = false;
+                boxSelectingSpline = null;
+                SceneView.RepaintAll();
+                e.Use();
+                return true;
+            }
+
+            return boxSelecting;
+        }
+
+        private static bool IsMouseNearAnyPoint(VFXSimpleSpline spline, int count, Vector2 mousePosition)
+        {
+            float maxDistance = Mathf.Max(14f, 12f * VFXSplinePointAPI.PickSizeMultiplier);
+            for (int i = 0; i < count; i++)
+            {
+                Vector2 pointGui = HandleUtility.WorldToGUIPoint(spline.GetEffectiveWorldPoint(i));
+                if (Vector2.Distance(mousePosition, pointGui) <= maxDistance)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static Rect GetBoxSelectionRect()
+        {
+            float xMin = Mathf.Min(boxSelectStart.x, boxSelectCurrent.x);
+            float xMax = Mathf.Max(boxSelectStart.x, boxSelectCurrent.x);
+            float yMin = Mathf.Min(boxSelectStart.y, boxSelectCurrent.y);
+            float yMax = Mathf.Max(boxSelectStart.y, boxSelectCurrent.y);
+            return Rect.MinMaxRect(xMin, yMin, xMax, yMax);
+        }
+
+        private static void DrawBoxSelectionRect()
+        {
+            Rect rect = GetBoxSelectionRect();
+            Handles.BeginGUI();
+            Color oldColor = GUI.color;
+            GUI.color = new Color(1f, 0.8f, 0.05f, 0.18f);
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 0.8f, 0.05f, 0.85f);
+            GUI.Box(rect, GUIContent.none);
+            GUI.color = oldColor;
+            Handles.EndGUI();
+        }
+
+        private static bool IsShiftRightMouseDown(Event e)
+        {
+            if (e == null || !e.shift)
+                return false;
+
+            if (e.type == EventType.ContextClick)
+                return true;
+
+            if ((e.type == EventType.MouseDown || e.rawType == EventType.MouseDown) && e.button == 1)
+                return true;
+
+            return false;
+        }
+
+        private static void AddAlignSelectedPointsMenu(GenericMenu menu, VFXSimpleSpline spline)
+        {
+            menu.AddItem(new GUIContent("多选对齐/上对齐 (Y 最大)"), false, () => AlignSelectedPoints(spline, 1, true));
+            menu.AddItem(new GUIContent("多选对齐/下对齐 (Y 最小)"), false, () => AlignSelectedPoints(spline, 1, false));
+            menu.AddItem(new GUIContent("多选对齐/右对齐 (X 最大)"), false, () => AlignSelectedPoints(spline, 0, true));
+            menu.AddItem(new GUIContent("多选对齐/左对齐 (X 最小)"), false, () => AlignSelectedPoints(spline, 0, false));
+            menu.AddItem(new GUIContent("多选对齐/前对齐 (Z 最大)"), false, () => AlignSelectedPoints(spline, 2, true));
+            menu.AddItem(new GUIContent("多选对齐/后对齐 (Z 最小)"), false, () => AlignSelectedPoints(spline, 2, false));
+        }
+
+        private static void AlignSelectedPoints(VFXSimpleSpline spline, int axis, bool useMax)
+        {
+            if (spline == null || spline.selectedPointIndices == null || spline.selectedPointIndices.Count <= 1)
+                return;
+
+            int count = spline.GetActivePointCount();
+            float target = useMax ? float.NegativeInfinity : float.PositiveInfinity;
+            for (int i = 0; i < spline.selectedPointIndices.Count; i++)
+            {
+                int index = spline.selectedPointIndices[i];
+                if (index < 0 || index >= count)
+                    continue;
+
+                float value = GetAxisValue(spline.GetEffectiveWorldPoint(index), axis);
+                target = useMax ? Mathf.Max(target, value) : Mathf.Min(target, value);
+            }
+
+            if (float.IsInfinity(target))
+                return;
+
+            Undo.RecordObject(spline, "Align Selected Spline Points");
+            for (int i = 0; i < spline.selectedPointIndices.Count; i++)
+            {
+                int index = spline.selectedPointIndices[i];
+                if (index < 0 || index >= count)
+                    continue;
+
+                Vector3 world = spline.GetEffectiveWorldPoint(index);
+                SetAxisValue(ref world, axis, target);
+
+                Transform boundTransform = spline.GetDynamicBindingTransformForPoint(index);
+                if (spline.IsPointDynamicallyBound(index) && boundTransform != null)
+                {
+                    Undo.RecordObject(boundTransform, "Align Dynamic Binding Transform");
+                    boundTransform.position = world;
+                    EditorUtility.SetDirty(boundTransform);
+                }
+                else
+                {
+                    spline.SetActivePointWorldPosition(index, world);
+                }
+            }
+
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private static float GetAxisValue(Vector3 value, int axis)
+        {
+            if (axis == 0) return value.x;
+            if (axis == 1) return value.y;
+            return value.z;
+        }
+
+        private static void SetAxisValue(ref Vector3 value, int axis, float axisValue)
+        {
+            if (axis == 0) value.x = axisValue;
+            else if (axis == 1) value.y = axisValue;
+            else value.z = axisValue;
         }
 
         private static void HandleBezierCurveContextMenu(VFXSimpleSpline spline)
         {
             Event e = Event.current;
-            if (e == null || e.type != EventType.MouseDown || e.button != 1)
+            if (!IsShiftRightMouseDown(e))
                 return;
 
             float rawProgress;
@@ -1111,22 +1588,70 @@ namespace VFXTimelineSplineTool.EditorTools
             menu.ShowAsContext();
         }
 
-        private static void HandleBezierBlankContextMenu(VFXSimpleSpline spline)
+        private static void ShowBezierCurveContextMenu(VFXSimpleSpline spline, float rawProgress)
+        {
+            GenericMenu menu = new GenericMenu();
+            menu.AddItem(new GUIContent("Insert Bezier Point Here"), false, () =>
+            {
+                Undo.RecordObject(spline, "Insert Bezier Point");
+                int inserted = spline.InsertBezierPointAtRawProgress(rawProgress);
+                if (inserted >= 0)
+                {
+                    EditorUtility.SetDirty(spline);
+                    SceneView.RepaintAll();
+                }
+            });
+            suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
+            menu.ShowAsContext();
+        }
+
+        private static void ShowCurveContextMenu(VFXSimpleSpline spline, float rawProgress)
+        {
+            if (spline == null)
+                return;
+
+            if (spline.pathMode == VFXSplinePathMode.Bezier)
+            {
+                ShowBezierCurveContextMenu(spline, rawProgress);
+                return;
+            }
+
+            GenericMenu menu = new GenericMenu();
+            menu.AddItem(new GUIContent("\u5728\u8fd9\u91cc\u63d2\u5165 Catmull-Rom \u70b9"), false, () =>
+            {
+                Undo.RecordObject(spline, "Insert Catmull-Rom Point");
+                int inserted = spline.InsertCatmullRomPointAtRawProgress(rawProgress);
+                if (inserted >= 0)
+                {
+                    EditorUtility.SetDirty(spline);
+                    SceneView.RepaintAll();
+                }
+            });
+            suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
+            menu.ShowAsContext();
+        }
+
+        private static bool HandleBlankAppendPoint(VFXSimpleSpline spline)
         {
             Event e = Event.current;
-            if (e == null || e.type != EventType.MouseDown || e.button != 1)
-                return;
+            if (!IsShiftRightMouseDown(e))
+                return false;
+
+            int count = spline != null ? spline.GetActivePointCount() : 0;
+            if (count > 0 && IsMouseNearAnyPoint(spline, count, e.mousePosition))
+                return false;
 
             Vector3 worldPosition;
             if (!TryGetWorldPointOnSplineEditPlane(spline, e.mousePosition, out worldPosition))
-                return;
+                return false;
 
-            Undo.RecordObject(spline, "Append Bezier Point");
+            Undo.RecordObject(spline, "Append Spline Point");
             spline.AppendPointAtWorldPosition(worldPosition);
             EditorUtility.SetDirty(spline);
             SceneView.RepaintAll();
             e.Use();
             suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
+            return true;
         }
 
         private static bool TryGetWorldPointOnSplineEditPlane(VFXSimpleSpline spline, Vector2 mousePosition, out Vector3 worldPosition)
@@ -1208,7 +1733,7 @@ namespace VFXTimelineSplineTool.EditorTools
         private static void HandleBezierPointContextMenu(VFXSimpleSpline spline, int index, Vector3 pointWorld, float pointSize)
         {
             Event e = Event.current;
-            if (e == null || e.type != EventType.MouseDown || e.button != 1)
+            if (!IsShiftRightMouseDown(e))
                 return;
 
             Vector2 pointGui = HandleUtility.WorldToGUIPoint(pointWorld);
@@ -1217,10 +1742,19 @@ namespace VFXTimelineSplineTool.EditorTools
                 return;
 
             Undo.RecordObject(spline, "Select Spline Point");
-            spline.selectedPointIndex = index;
+            bool clickedSelectedMultiPoint = spline.selectedPointIndices != null &&
+                                             spline.selectedPointIndices.Count > 1 &&
+                                             spline.selectedPointIndices.Contains(index);
+            if (!clickedSelectedMultiPoint)
+                SetSinglePointSelection(spline, index);
             EditorUtility.SetDirty(spline);
 
             GenericMenu menu = new GenericMenu();
+            if (spline.selectedPointIndices != null && spline.selectedPointIndices.Count > 1)
+            {
+                AddAlignSelectedPointsMenu(menu, spline);
+                menu.AddSeparator("");
+            }
             AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.AutoSmooth, "自动平滑");
             menu.AddItem(new GUIContent("自动平滑全部"), false, () =>
             {
@@ -1244,7 +1778,6 @@ namespace VFXTimelineSplineTool.EditorTools
                 {
                     Undo.RecordObject(spline, "Delete Bezier Point");
                     spline.RemovePointAt(index);
-                    spline.selectedPointIndex = Mathf.Clamp(index, 0, spline.GetActivePointCount() - 1);
                     EditorUtility.SetDirty(spline);
                     SceneView.RepaintAll();
                 });
@@ -1257,6 +1790,126 @@ namespace VFXTimelineSplineTool.EditorTools
             suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
             SceneView.RepaintAll();
             menu.ShowAsContext();
+        }
+
+        private static void ShowPointContextMenu(VFXSimpleSpline spline, int index)
+        {
+            if (spline == null || index < 0 || index >= spline.GetActivePointCount())
+                return;
+
+            Undo.RecordObject(spline, "Select Spline Point");
+            bool clickedSelectedMultiPoint = spline.selectedPointIndices != null &&
+                                             spline.selectedPointIndices.Count > 1 &&
+                                             spline.selectedPointIndices.Contains(index);
+            if (!clickedSelectedMultiPoint)
+                SetSinglePointSelection(spline, index);
+            EditorUtility.SetDirty(spline);
+
+            GenericMenu menu = new GenericMenu();
+            if (spline.selectedPointIndices != null && spline.selectedPointIndices.Count > 1)
+            {
+                AddAlignSelectedPointsMenu(menu, spline);
+                menu.AddSeparator("");
+            }
+
+            if (spline.pathMode == VFXSplinePathMode.Bezier)
+            {
+                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.AutoSmooth, "\u81ea\u52a8\u5e73\u6ed1");
+                menu.AddItem(new GUIContent("\u81ea\u52a8\u5e73\u6ed1\u5168\u90e8"), false, () =>
+                {
+                    Undo.RecordObject(spline, "Auto Smooth All Bezier Points");
+                    spline.AutoSmoothAllBezierPoints();
+                    EditorUtility.SetDirty(spline);
+                    SceneView.RepaintAll();
+                });
+                menu.AddSeparator("");
+                AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Corner, "\u70b9\u7c7b\u578b/\u62d0\u89d2");
+                AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Smooth, "\u70b9\u7c7b\u578b/\u5e73\u6ed1");
+                AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Symmetric, "\u70b9\u7c7b\u578b/\u5bf9\u79f0");
+                menu.AddSeparator("");
+                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Free, "\u624b\u67c4\u6a21\u5f0f/\u81ea\u7531\u624b\u67c4");
+                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Aligned, "\u624b\u67c4\u6a21\u5f0f/\u5bf9\u9f50");
+                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Mirrored, "\u624b\u67c4\u6a21\u5f0f/\u955c\u50cf");
+                menu.AddSeparator("");
+            }
+            else
+            {
+                menu.AddItem(new GUIContent("\u5728\u5f53\u524d\u70b9\u540e\u63d2\u5165\u70b9"), false, () =>
+                {
+                    Undo.RecordObject(spline, "Insert Catmull-Rom Point After");
+                    spline.InsertPoint(index + 1);
+                    EditorUtility.SetDirty(spline);
+                    SceneView.RepaintAll();
+                });
+                menu.AddSeparator("");
+            }
+
+            List<int> deleteIndices = GetContextDeleteIndices(spline, index);
+            string deleteLabel = deleteIndices.Count > 1 ? "\u5220\u9664\u9009\u4e2d\u7684\u70b9" : "\u5220\u9664\u5f53\u524d\u70b9";
+            if (spline.GetActivePointCount() > 2 && deleteIndices.Count > 0)
+            {
+                menu.AddItem(new GUIContent(deleteLabel), false, () =>
+                {
+                    Undo.RecordObject(spline, deleteIndices.Count > 1 ? "Delete Selected Spline Points" : "Delete Spline Point");
+                    DeleteSplinePoints(spline, deleteIndices);
+                    EditorUtility.SetDirty(spline);
+                    SceneView.RepaintAll();
+                });
+            }
+            else
+            {
+                menu.AddDisabledItem(new GUIContent(deleteLabel));
+            }
+
+            suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
+            SceneView.RepaintAll();
+            menu.ShowAsContext();
+        }
+
+        private static List<int> GetContextDeleteIndices(VFXSimpleSpline spline, int clickedIndex)
+        {
+            List<int> indices = new List<int>();
+            if (spline == null)
+                return indices;
+
+            int count = spline.GetActivePointCount();
+            bool deleteSelection = spline.selectedPointIndices != null &&
+                                   spline.selectedPointIndices.Count > 1 &&
+                                   spline.selectedPointIndices.Contains(clickedIndex);
+
+            if (deleteSelection)
+            {
+                for (int i = 0; i < spline.selectedPointIndices.Count; i++)
+                {
+                    int index = spline.selectedPointIndices[i];
+                    if (index >= 0 && index < count && !indices.Contains(index))
+                        indices.Add(index);
+                }
+            }
+            else if (clickedIndex >= 0 && clickedIndex < count)
+            {
+                indices.Add(clickedIndex);
+            }
+
+            indices.Sort();
+            indices.Reverse();
+            return indices;
+        }
+
+        private static void DeleteSplinePoints(VFXSimpleSpline spline, List<int> indices)
+        {
+            if (spline == null || indices == null)
+                return;
+
+            for (int i = 0; i < indices.Count; i++)
+            {
+                if (spline.GetActivePointCount() <= 2)
+                    break;
+
+                int index = indices[i];
+                if (index >= 0 && index < spline.GetActivePointCount())
+                    spline.RemovePointAt(index);
+            }
         }
 
         private static void AddBezierPointPresetMenuItem(GenericMenu menu, VFXSimpleSpline spline, int index, VFXBezierPointPreset preset, string label)
@@ -1303,26 +1956,33 @@ namespace VFXTimelineSplineTool.EditorTools
             }
 
             Handles.BeginGUI();
-            GUILayout.BeginArea(rect, EditorStyles.toolbar);
-            GUILayout.BeginHorizontal();
+            GUI.Box(rect, GUIContent.none, EditorStyles.toolbar);
+            currentBezierToolbarRect = rect;
+            currentBezierToolbarButtonIndex = 0;
             DrawBezierModeButton(spline, index, VFXBezierHandleMode.Free, "自由");
             DrawBezierModeButton(spline, index, VFXBezierHandleMode.Aligned, "对齐");
             DrawBezierModeButton(spline, index, VFXBezierHandleMode.Mirrored, "镜像");
-            GUILayout.EndHorizontal();
-            GUILayout.EndArea();
             Handles.EndGUI();
         }
 
         private static void DrawBezierModeButton(VFXSimpleSpline spline, int index, VFXBezierHandleMode mode, string label)
         {
+            int buttonIndex = currentBezierToolbarButtonIndex++;
+            Rect rect = new Rect(currentBezierToolbarRect.x + buttonIndex * 58f, currentBezierToolbarRect.y, 58f, currentBezierToolbarRect.height);
+            DrawBezierModeButton(spline, index, mode, label, rect);
+        }
+
+        private static void DrawBezierModeButton(VFXSimpleSpline spline, int index, VFXBezierHandleMode mode, string label, Rect rect)
+        {
             bool selected = spline.bezierPoints[index].handleMode == mode;
-            EditorGUI.BeginDisabledGroup(selected);
-            if (GUILayout.Button(label, EditorStyles.toolbarButton, GUILayout.Width(54f)))
+            using (new EditorGUI.DisabledScope(selected))
             {
-                ApplyBezierHandleMode(spline, index, mode);
-                Event.current.Use();
+                if (GUI.Button(rect, label, EditorStyles.toolbarButton))
+                {
+                    ApplyBezierHandleMode(spline, index, mode);
+                    Event.current.Use();
+                }
             }
-            EditorGUI.EndDisabledGroup();
         }
 
         private static void ApplyBezierHandleMode(VFXSimpleSpline spline, int index, VFXBezierHandleMode mode)

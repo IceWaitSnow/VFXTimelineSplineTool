@@ -191,6 +191,7 @@ namespace VFXTimelineSplineTool
         public bool showPointLabels = true;
         public bool showAllPointHandles = false;
         [HideInInspector] public int selectedPointIndex = 0;
+        [HideInInspector] public List<int> selectedPointIndices = new List<int>();
         public bool showProgressMarks = true;
         [Range(1, 20)] public int progressMarkCount = 4;
         public bool progressMarksUseDistance = true;
@@ -557,6 +558,8 @@ namespace VFXTimelineSplineTool
                 new Vector3(6f, 0f, 0f)
             };
             ConvertCatmullRomToBezier();
+            selectedPointIndex = 0;
+            selectedPointIndices = new List<int>() { 0 };
             MarkDistanceCacheDirty();
         }
 
@@ -567,6 +570,8 @@ namespace VFXTimelineSplineTool
                 EnsureBezierPoints();
                 Vector3 newPoint = bezierPoints.Count > 0 ? bezierPoints[bezierPoints.Count - 1].position + Vector3.right : Vector3.zero;
                 bezierPoints.Add(CreateBezierPointForBezierList(newPoint, bezierPoints.Count));
+                selectedPointIndex = bezierPoints.Count - 1;
+                selectedPointIndices = new List<int>() { selectedPointIndex };
                 RefreshAllAutoSmoothBezierPoints();
             }
             else
@@ -574,6 +579,8 @@ namespace VFXTimelineSplineTool
                 EnsureLocalPoints();
                 Vector3 newPoint = localPoints.Count > 0 ? localPoints[localPoints.Count - 1] + Vector3.right : Vector3.zero;
                 localPoints.Add(newPoint);
+                selectedPointIndex = localPoints.Count - 1;
+                selectedPointIndices = new List<int>() { selectedPointIndex };
             }
             MarkDistanceCacheDirty();
         }
@@ -588,6 +595,7 @@ namespace VFXTimelineSplineTool
                 int index = bezierPoints.Count;
                 bezierPoints.Add(CreateBezierPointForBezierList(localPosition, index));
                 selectedPointIndex = index;
+                selectedPointIndices = new List<int>() { index };
                 RefreshAllAutoSmoothBezierPoints();
                 MarkDistanceCacheDirty();
                 return index;
@@ -596,6 +604,7 @@ namespace VFXTimelineSplineTool
             EnsureLocalPoints();
             localPoints.Add(localPosition);
             selectedPointIndex = localPoints.Count - 1;
+            selectedPointIndices = new List<int>() { selectedPointIndex };
             MarkDistanceCacheDirty();
             return selectedPointIndex;
         }
@@ -612,6 +621,8 @@ namespace VFXTimelineSplineTool
                 else if (index >= bezierPoints.Count) p = bezierPoints[bezierPoints.Count - 1].position + Vector3.right;
                 else p = (bezierPoints[index - 1].position + bezierPoints[index].position) * 0.5f;
                 bezierPoints.Insert(index, CreateBezierPointForBezierList(p, index));
+                selectedPointIndex = index;
+                selectedPointIndices = new List<int>() { selectedPointIndex };
                 RefreshAllAutoSmoothBezierPoints();
             }
             else
@@ -624,6 +635,8 @@ namespace VFXTimelineSplineTool
                 else if (index >= localPoints.Count) p = localPoints[localPoints.Count - 1] + Vector3.right;
                 else p = (localPoints[index - 1] + localPoints[index]) * 0.5f;
                 localPoints.Insert(index, p);
+                selectedPointIndex = index;
+                selectedPointIndices = new List<int>() { selectedPointIndex };
             }
             MarkDistanceCacheDirty();
         }
@@ -673,6 +686,28 @@ namespace VFXTimelineSplineTool
             int insertIndex = index + 1;
             bezierPoints.Insert(insertIndex, newPoint);
             selectedPointIndex = insertIndex;
+            selectedPointIndices = new List<int>() { insertIndex };
+            MarkDistanceCacheDirty();
+            return insertIndex;
+        }
+
+        public int InsertCatmullRomPointAtRawProgress(float progress)
+        {
+            EnsureLocalPoints();
+            if (localPoints.Count < 2)
+                return -1;
+
+            progress = Mathf.Clamp01(progress);
+            float scaled = progress * (localPoints.Count - 1);
+            int index = Mathf.FloorToInt(scaled);
+            if (index >= localPoints.Count - 1) index = localPoints.Count - 2;
+
+            Vector3 worldPosition = GetPointByRawProgress(progress);
+            Vector3 localPosition = transform.InverseTransformPoint(worldPosition);
+            int insertIndex = index + 1;
+            localPoints.Insert(insertIndex, localPosition);
+            selectedPointIndex = insertIndex;
+            selectedPointIndices = new List<int>() { insertIndex };
             MarkDistanceCacheDirty();
             return insertIndex;
         }
@@ -684,6 +719,8 @@ namespace VFXTimelineSplineTool
                 if (bezierPoints == null || bezierPoints.Count <= 2) return;
                 if (index < 0 || index >= bezierPoints.Count) return;
                 bezierPoints.RemoveAt(index);
+                selectedPointIndex = Mathf.Clamp(index, 0, bezierPoints.Count - 1);
+                selectedPointIndices = new List<int>() { selectedPointIndex };
                 RefreshAllAutoSmoothBezierPoints();
             }
             else
@@ -691,6 +728,8 @@ namespace VFXTimelineSplineTool
                 if (localPoints == null || localPoints.Count <= 2) return;
                 if (index < 0 || index >= localPoints.Count) return;
                 localPoints.RemoveAt(index);
+                selectedPointIndex = Mathf.Clamp(index, 0, localPoints.Count - 1);
+                selectedPointIndices = new List<int>() { selectedPointIndex };
             }
             MarkDistanceCacheDirty();
         }
