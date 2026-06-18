@@ -1051,7 +1051,10 @@ namespace VFXTimelineSplineTool.EditorTools
             }
 
             if (spline.pathMode == VFXSplinePathMode.Bezier)
+            {
                 HandleBezierCurveContextMenu(spline);
+                HandleBezierBlankContextMenu(spline);
+            }
         }
 
         private static bool TryForceSelectNearestPoint(VFXSimpleSpline spline, int count)
@@ -1106,6 +1109,52 @@ namespace VFXTimelineSplineTool.EditorTools
             e.Use();
             suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
             menu.ShowAsContext();
+        }
+
+        private static void HandleBezierBlankContextMenu(VFXSimpleSpline spline)
+        {
+            Event e = Event.current;
+            if (e == null || e.type != EventType.MouseDown || e.button != 1)
+                return;
+
+            Vector3 worldPosition;
+            if (!TryGetWorldPointOnSplineEditPlane(spline, e.mousePosition, out worldPosition))
+                return;
+
+            Undo.RecordObject(spline, "Append Bezier Point");
+            spline.AppendPointAtWorldPosition(worldPosition);
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+            e.Use();
+            suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
+        }
+
+        private static bool TryGetWorldPointOnSplineEditPlane(VFXSimpleSpline spline, Vector2 mousePosition, out Vector3 worldPosition)
+        {
+            worldPosition = Vector3.zero;
+            if (spline == null)
+                return false;
+
+            Ray ray = HandleUtility.GUIPointToWorldRay(mousePosition);
+            Vector3 planePoint = spline.transform.position;
+            int count = spline.GetActivePointCount();
+            if (count > 0)
+            {
+                int selectedIndex = Mathf.Clamp(spline.selectedPointIndex, 0, count - 1);
+                planePoint = spline.GetEffectiveWorldPoint(selectedIndex);
+            }
+
+            Vector3 planeNormal = SceneView.currentDrawingSceneView != null && SceneView.currentDrawingSceneView.camera != null
+                ? SceneView.currentDrawingSceneView.camera.transform.forward
+                : Vector3.up;
+
+            Plane plane = new Plane(planeNormal, planePoint);
+            float distance;
+            if (!plane.Raycast(ray, out distance))
+                return false;
+
+            worldPosition = ray.GetPoint(distance);
+            return true;
         }
 
         private static bool TryFindNearestRawProgressOnCurve(VFXSimpleSpline spline, Vector2 mousePosition, out float rawProgress)

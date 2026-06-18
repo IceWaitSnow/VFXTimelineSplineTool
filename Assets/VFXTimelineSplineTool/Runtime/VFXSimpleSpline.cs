@@ -578,6 +578,28 @@ namespace VFXTimelineSplineTool
             MarkDistanceCacheDirty();
         }
 
+        public int AppendPointAtWorldPosition(Vector3 worldPosition)
+        {
+            Vector3 localPosition = transform.InverseTransformPoint(worldPosition);
+
+            if (pathMode == VFXSplinePathMode.Bezier)
+            {
+                EnsureBezierPoints();
+                int index = bezierPoints.Count;
+                bezierPoints.Add(CreateBezierPointForBezierList(localPosition, index));
+                selectedPointIndex = index;
+                RefreshAllAutoSmoothBezierPoints();
+                MarkDistanceCacheDirty();
+                return index;
+            }
+
+            EnsureLocalPoints();
+            localPoints.Add(localPosition);
+            selectedPointIndex = localPoints.Count - 1;
+            MarkDistanceCacheDirty();
+            return selectedPointIndex;
+        }
+
         public void InsertPoint(int index)
         {
             if (pathMode == VFXSplinePathMode.Bezier)
