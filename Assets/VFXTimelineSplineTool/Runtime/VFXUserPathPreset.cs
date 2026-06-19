@@ -11,6 +11,7 @@ namespace VFXTimelineSplineTool
     {
         public string presetName = "New Path Preset";
         public VFXSplinePathMode pathMode = VFXSplinePathMode.CatmullRom;
+        public bool loop = false;
         public List<Vector3> localPoints = new List<Vector3>();
         public List<VFXBezierPoint> bezierPoints = new List<VFXBezierPoint>();
 
@@ -29,6 +30,7 @@ namespace VFXTimelineSplineTool
 
             presetName = string.IsNullOrEmpty(displayName) ? spline.name : displayName;
             pathMode = spline.pathMode;
+            loop = spline.loop;
             if (spline.pathMode == VFXSplinePathMode.Bezier && spline.bezierPoints != null)
             {
                 localPoints = new List<Vector3>();
@@ -59,6 +61,7 @@ namespace VFXTimelineSplineTool
             if (spline == null) return;
 
             spline.pathMode = pathMode;
+            spline.loop = loop;
             spline.localPoints = localPoints != null ? new List<Vector3>(localPoints) : new List<Vector3>();
             if (spline.localPoints.Count < 2)
             {

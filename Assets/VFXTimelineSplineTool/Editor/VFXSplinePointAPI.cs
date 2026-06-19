@@ -20,19 +20,18 @@ namespace VFXTimelineSplineTool.EditorTools
         private const string ActiveSplineIdKey = "VFXTimelineSplineTool.PointOverlay.ActiveSplineId";
         private const string PickSizeMultiplierKey = "VFXTimelineSplineTool.PointOverlay.PickSizeMultiplier";
         private const string LargerFirstPointKey = "VFXTimelineSplineTool.PointOverlay.LargerFirstPoint";
-        private const string TogglePointModeShortcutKey = "VFXTimelineSplineTool.Shortcut.TogglePointMode";
-        private const string AppendModeShortcutKey = "VFXTimelineSplineTool.Shortcut.AppendMode";
-        private const string ContextMenuShortcutKey = "VFXTimelineSplineTool.Shortcut.ContextMenu";
-        private static bool hasStoredToolsHidden;
-        private static bool previousToolsHidden;
 
         static VFXSplinePointAPI()
         {
-            Selection.selectionChanged -= ApplyToolVisibility;
-            Selection.selectionChanged += ApplyToolVisibility;
-            EditorApplication.quitting -= RestoreToolVisibility;
-            EditorApplication.quitting += RestoreToolVisibility;
+            Selection.selectionChanged -= OnSelectionChanged;
+            Selection.selectionChanged += OnSelectionChanged;
             ApplyToolVisibility();
+        }
+
+        private static void OnSelectionChanged()
+        {
+            ApplyToolVisibility();
+            SceneView.RepaintAll();
         }
 
         public static bool Enabled
@@ -41,7 +40,6 @@ namespace VFXTimelineSplineTool.EditorTools
             set
             {
                 EditorPrefs.SetBool(EnabledKey, value);
-                ApplyToolVisibility();
                 SceneView.RepaintAll();
             }
         }
@@ -60,15 +58,17 @@ namespace VFXTimelineSplineTool.EditorTools
 
         public static bool IsPointMode
         {
-            get { return Enabled && EditMode == VFXSplinePointEditMode.Points; }
+            get { return IsPointEditingActive; }
+        }
+
+        public static bool IsPointEditingActive
+        {
+            get { return GetSelectedSpline() != null; }
         }
 
         public static void ToggleEditMode()
         {
-            if (IsPointMode)
-                EnterObjectMode();
-            else
-                EnterPointMode();
+            Enabled = !Enabled;
         }
 
         public static float PickSizeMultiplier
@@ -97,47 +97,6 @@ namespace VFXTimelineSplineTool.EditorTools
             }
         }
 
-        public static KeyCode TogglePointModeShortcut
-        {
-            get { return GetShortcut(TogglePointModeShortcutKey, KeyCode.P); }
-            set { SetShortcut(TogglePointModeShortcutKey, value, KeyCode.P); }
-        }
-
-        public static KeyCode AppendModeShortcut
-        {
-            get { return GetShortcut(AppendModeShortcutKey, KeyCode.A); }
-            set { SetShortcut(AppendModeShortcutKey, value, KeyCode.A); }
-        }
-
-        public static KeyCode ContextMenuShortcut
-        {
-            get { return GetShortcut(ContextMenuShortcutKey, KeyCode.M); }
-            set { SetShortcut(ContextMenuShortcutKey, value, KeyCode.M); }
-        }
-
-        public static void ResetShortcutSettings()
-        {
-            TogglePointModeShortcut = KeyCode.P;
-            AppendModeShortcut = KeyCode.A;
-            ContextMenuShortcut = KeyCode.M;
-        }
-
-        public static string GetShortcutLabel(KeyCode key)
-        {
-            return key == KeyCode.None ? "-" : key.ToString();
-        }
-
-        private static KeyCode GetShortcut(string key, KeyCode fallback)
-        {
-            return (KeyCode)EditorPrefs.GetInt(key, (int)fallback);
-        }
-
-        private static void SetShortcut(string key, KeyCode value, KeyCode fallback)
-        {
-            EditorPrefs.SetInt(key, (int)(value == KeyCode.None ? fallback : value));
-            SceneView.RepaintAll();
-        }
-
         public static VFXSimpleSpline GetSelectedSpline()
         {
             GameObject go = Selection.activeGameObject;
@@ -148,13 +107,6 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             get
             {
-                if (EditMode == VFXSplinePointEditMode.Points)
-                {
-                    VFXSimpleSpline stored = GetStoredActiveSpline();
-                    if (stored != null)
-                        return stored;
-                }
-
                 VFXSimpleSpline selected = GetSelectedSpline();
                 if (selected != null)
                     return selected;
@@ -170,15 +122,15 @@ namespace VFXTimelineSplineTool.EditorTools
             else
                 CaptureSelectedSplineAsActive();
 
+            Enabled = true;
             EditorPrefs.SetInt(EditModeKey, (int)VFXSplinePointEditMode.Points);
-            ApplyToolVisibility();
             SceneView.RepaintAll();
         }
 
         public static void EnterObjectMode()
         {
             EditorPrefs.SetInt(EditModeKey, (int)VFXSplinePointEditMode.Object);
-            ApplyToolVisibility();
+            VFXSplineSceneDrawer.ExitAppendPointMode();
             SceneView.RepaintAll();
         }
 
@@ -188,7 +140,6 @@ namespace VFXTimelineSplineTool.EditorTools
                 return;
 
             EditorPrefs.SetInt(ActiveSplineIdKey, spline.GetInstanceID());
-            ApplyToolVisibility();
             SceneView.RepaintAll();
         }
 
@@ -207,30 +158,12 @@ namespace VFXTimelineSplineTool.EditorTools
 
         public static void ApplyToolVisibility()
         {
-            bool shouldHide = IsPointMode && ActiveSpline != null;
-            if (shouldHide)
-            {
-                if (!hasStoredToolsHidden)
-                {
-                    previousToolsHidden = Tools.hidden;
-                    hasStoredToolsHidden = true;
-                }
-                Tools.hidden = true;
-            }
-            else if (hasStoredToolsHidden)
-            {
-                Tools.hidden = previousToolsHidden;
-                hasStoredToolsHidden = false;
-            }
+            Tools.hidden = false;
         }
 
         public static void RestoreToolVisibility()
         {
-            if (!hasStoredToolsHidden)
-                return;
-
-            Tools.hidden = previousToolsHidden;
-            hasStoredToolsHidden = false;
+            Tools.hidden = false;
         }
 
         public static int GetPointCount(VFXSimpleSpline spline)
@@ -433,33 +366,12 @@ namespace VFXTimelineSplineTool.EditorTools
             if (e == null || spline == null || e.type != EventType.KeyDown)
                 return false;
 
-            if (IsPlainKey(e, TogglePointModeShortcut))
-            {
-                ToggleEditMode();
-                e.Use();
-                return true;
-            }
-
-            if (e.keyCode == KeyCode.Escape && IsPointMode)
-            {
-                EnterObjectMode();
-                e.Use();
-                return true;
-            }
-
-            if (!IsPointMode)
+            if (!IsPointEditingActive)
                 return false;
 
             if (e.keyCode == KeyCode.F)
             {
                 FramePoint();
-                e.Use();
-                return true;
-            }
-
-            if (e.shift && !e.control && !e.command && !e.alt && e.keyCode == AppendModeShortcut)
-            {
-                AddPointAtEnd(spline);
                 e.Use();
                 return true;
             }
@@ -474,16 +386,6 @@ namespace VFXTimelineSplineTool.EditorTools
             return false;
         }
 
-        public static bool IsPlainKey(Event e, KeyCode keyCode)
-        {
-            return e != null &&
-                   keyCode != KeyCode.None &&
-                   !e.shift &&
-                   !e.control &&
-                   !e.command &&
-                   !e.alt &&
-                   e.keyCode == keyCode;
-        }
     }
 }
 #endif

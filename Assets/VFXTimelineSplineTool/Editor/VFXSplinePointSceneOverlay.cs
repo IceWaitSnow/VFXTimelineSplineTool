@@ -2,6 +2,9 @@
 #if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
+#if UNITY_2019_1_OR_NEWER
+using UnityEditor.ShortcutManagement;
+#endif
 
 namespace VFXTimelineSplineTool.EditorTools
 {
@@ -16,17 +19,19 @@ namespace VFXTimelineSplineTool.EditorTools
             SceneView.duringSceneGui += OnGUI;
         }
 
-        [MenuItem("Tools/VFX Timeline Spline/Edit Points Mode")]
-        public static void EnterPointMode()
+#if UNITY_2019_1_OR_NEWER
+        [Shortcut("VFX Timeline Spline/切换追加点模式", typeof(SceneView), KeyCode.A)]
+        private static void ToggleAppendPointModeShortcut(ShortcutArguments args)
         {
-            VFXSplinePointAPI.EnterPointMode();
+            VFXSplineSceneDrawer.ToggleAppendPointModeFromShortcut();
         }
 
-        [MenuItem("Tools/VFX Timeline Spline/Object Mode")]
-        public static void EnterObjectMode()
+        [Shortcut("VFX Timeline Spline/点菜单或在线段插入点", typeof(SceneView), KeyCode.M)]
+        private static void OpenPointMenuOrInsertOnCurveShortcut(ShortcutArguments args)
         {
-            VFXSplinePointAPI.EnterObjectMode();
+            VFXSplineSceneDrawer.OpenContextMenuFromShortcut();
         }
+#endif
 
         private static void OnGUI(SceneView view)
         {
@@ -37,7 +42,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
             VFXSplinePointAPI.HandleShortcut(Event.current, spline);
 
-            if (!VFXSplinePointAPI.IsPointMode)
+            if (!VFXSplinePointAPI.IsPointEditingActive)
                 return;
 
             if (Selection.activeGameObject == spline.gameObject)

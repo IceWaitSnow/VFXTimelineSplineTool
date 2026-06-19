@@ -92,33 +92,19 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             EditorGUILayout.LabelField("Scene 控制点覆盖层", EditorStyles.boldLabel);
             EditorGUI.BeginChangeCheck();
-            VFXSplinePointEditMode mode = VFXSimpleSplineEditor.DrawPointEditModePopup(VFXSplinePointAPI.EditMode);
             bool enabled = EditorGUILayout.Toggle(new GUIContent("启用控制点 Handle", "开启后可以在 Scene 视图中选择和移动 Spline 控制点。"), VFXSplinePointAPI.Enabled);
             float pickSize = EditorGUILayout.Slider(new GUIContent("拾取尺寸倍数", "控制点的可点击区域放大倍数。点和 Transform Gizmo 重叠时，可以调大这个值。"), VFXSplinePointAPI.PickSizeMultiplier, 1f, 8f);
             bool largerFirst = EditorGUILayout.Toggle(new GUIContent("放大第一个点", "让第一个控制点更容易被看到和点中。"), VFXSplinePointAPI.LargerFirstPoint);
             if (EditorGUI.EndChangeCheck())
             {
-                if (mode == VFXSplinePointEditMode.Points)
-                    VFXSplinePointAPI.EnterPointMode(spline);
-                else
-                    VFXSplinePointAPI.EnterObjectMode();
                 VFXSplinePointAPI.Enabled = enabled;
                 VFXSplinePointAPI.PickSizeMultiplier = pickSize;
                 VFXSplinePointAPI.LargerFirstPoint = largerFirst;
             }
 
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                if (GUILayout.Button("编辑控制点"))
-                    VFXSplinePointAPI.EnterPointMode(spline);
-                if (GUILayout.Button("移动 Spline 物体"))
-                    VFXSplinePointAPI.EnterObjectMode();
-            }
-
-            string toggleKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.TogglePointModeShortcut);
-            string appendKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.AppendModeShortcut);
-            string menuKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.ContextMenuShortcut);
-            EditorGUILayout.HelpBox("物体模式显示 Unity Transform Gizmo，用来移动整条 Spline。点编辑模式会锁定当前 Spline，即使点击 Scene 空白处也继续编辑。快捷键：" + toggleKey + " 切换点编辑，" + appendKey + " 追加点模式，" + menuKey + " 打开菜单，Esc 返回物体模式，F 聚焦当前点，Delete 删除当前点。", MessageType.None);
+            string appendKey = "A";
+            string menuKey = "M";
+            EditorGUILayout.HelpBox("单一操作模式：Unity Transform Gizmo 始终可用，用来移动整条 Spline；控制点也可直接点选和拖动。快捷键：" + appendKey + " 连续追加点，" + menuKey + " 点菜单 / 线段插点，F 聚焦当前点，Delete 删除当前点。", MessageType.None);
         }
 
         private void DrawToolbar(int count)

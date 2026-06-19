@@ -13,6 +13,12 @@ namespace VFXTimelineSplineTool.EditorTools
     public class VFXSimpleSplineEditor : Editor
     {
         private static int batchAnchorCount = 5;
+        private const float HealthDuplicatePointDistance = 0.001f;
+        private const float HealthClosePointDistance = 0.05f;
+        private const float HealthLoopEndpointDistance = 0.15f;
+        private const float HealthLongHandleRatio = 1.25f;
+        private const float HealthClampedHandleRatio = 0.5f;
+        private const float HealthLoopSeamAngle = 60f;
 
         private enum ShapePreset
         {
@@ -57,11 +63,12 @@ namespace VFXTimelineSplineTool.EditorTools
 
             EditorGUILayout.Space(4);
             EditorGUILayout.LabelField("VFX Timeline Spline Tool v" + VFXSimpleSpline.ToolVersion, EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("3D Catmull-Rom 自由曲线路径。v" + VFXSplineToolVersion.Version + " 正式工作流：Spline Path 负责路径，VFXSplineAnimator 负责路径运动，VFXSplineAnchor 负责粒子/面片/爆点挂点；Dynamic Start / End Binding 可让路径起点和终点跟随场景物体。", MessageType.Info);
+            EditorGUILayout.HelpBox("3D Catmull-Rom / Bezier 自由曲线路径。v" + VFXSplineToolVersion.Version + " 工作流：Spline Path 负责路径，VFXSplineAnimator 负责路径运动，VFXSplineAnchor 负责粒子/面片/爆点挂点；Dynamic Start / End Binding 可让路径起点和终点跟随场景物体。", MessageType.Info);
 
             serializedObject.Update();
 
             DrawPathModeProperty(spline);
+            DrawProperty("loop", "Loop 闭合路径");
             DrawProperty("pathColor", "路径颜色");
             DrawProperty("progressMarkColor", "Progress 标记颜色");
             DrawProperty("lineWidth", "线宽");
@@ -70,7 +77,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("显示设置", EditorStyles.boldLabel);
-            DrawPointEditModeControls(spline);
+            DrawPointEditingSettings();
             DrawProperty("alwaysShowPathInSceneView", "Scene 中始终显示路径");
             DrawProperty("showPointLabels", "显示控制点编号");
             DrawProperty("showAllPointHandles", "显示全部控制点坐标轴");
@@ -168,14 +175,23 @@ namespace VFXTimelineSplineTool.EditorTools
                 if (GUILayout.Button("重置路径")) ModifySpline(spline, "Reset Path", () => spline.ResetPath());
                 if (GUILayout.Button("压平 Y")) ModifySpline(spline, "Flatten Y", () => spline.FlattenY());
             }
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                string loopButton = spline.loop ? "关闭 Loop" : "开启 Loop";
+                if (GUILayout.Button(loopButton)) ModifySpline(spline, "Toggle Spline Loop", () =>
+                {
+                    spline.loop = !spline.loop;
+                    spline.MarkDistanceCacheDirty();
+                });
+            }
             if (GUILayout.Button("路径居中到物体")) ModifySpline(spline, "Center Path To Object", () => spline.CenterPathToObject());
 
+            DrawSplineHealthTools(spline);
             DrawShapePresetTools(spline);
             DrawUserPresetTools(spline);
             DrawAnchorTools(spline);
             DrawPointTools(spline);
         }
-
         private void DrawProperty(string name, string label, bool includeChildren = false)
         {
             SerializedProperty p = serializedObject.FindProperty(name);
@@ -192,10 +208,11 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             switch (propertyName)
             {
+                case "loop": return "开启后，路径最后一个控制点会连接回第一个控制点，适合循环运动，避免 0% / 100% 首尾跳变。";
                 case "pathColor": return "Scene 视图中绘制 Spline 路径线的颜色。";
                 case "progressMarkColor": return "Scene 视图中 Progress 百分比标记的颜色。";
                 case "lineWidth": return "Spline 路径线在 Scene 视图中的显示宽度。";
-                case "pointSize": return "控制点在 Scene 视图中的显示大小，也会影响点击区域的基础尺寸。";
+                case "pointSize": return "控制点在 Scene 视图中的显示大小，也会影响点选区域的基础尺寸。";
                 case "resolution": return "绘制和采样曲线时使用的分段数量。值越高曲线越平滑，但 Scene 绘制开销也越高。";
                 case "alwaysShowPathInSceneView": return "开启后，即使没有选中此 Spline，也会在 Scene 视图中显示路径。";
                 case "showPointLabels": return "在 Scene 视图中显示控制点编号，方便定位和编辑。";
@@ -217,54 +234,21 @@ namespace VFXTimelineSplineTool.EditorTools
                 default: return "";
             }
         }
-
-        private static void DrawPointEditModeControls(VFXSimpleSpline spline)
+        private static void DrawPointEditingSettings()
         {
             EditorGUI.BeginChangeCheck();
-            VFXSplinePointEditMode mode = DrawPointEditModePopup(VFXSplinePointAPI.EditMode);
+            bool enabled = EditorGUILayout.Toggle(new GUIContent("启用 Scene 控制点编辑", "开启后，选中 Spline 时可以直接点选控制点、按 M 打开点菜单或在线段插入点。Unity Transform Gizmo 会保持可用，用来移动整条 Spline。"), VFXSplinePointAPI.Enabled);
+            float pickSize = EditorGUILayout.Slider(new GUIContent("拾取尺寸倍数", "控制点的可点击区域放大倍数。点和 Transform Gizmo 重叠时，可以调大这个值。"), VFXSplinePointAPI.PickSizeMultiplier, 1f, 8f);
+            bool largerFirst = EditorGUILayout.Toggle(new GUIContent("放大第一个点", "让第一个控制点更容易被看到和点中。"), VFXSplinePointAPI.LargerFirstPoint);
             if (EditorGUI.EndChangeCheck())
             {
-                if (mode == VFXSplinePointEditMode.Points)
-                    VFXSplinePointAPI.EnterPointMode(spline);
-                else
-                    VFXSplinePointAPI.EnterObjectMode();
+                VFXSplinePointAPI.Enabled = enabled;
+                VFXSplinePointAPI.PickSizeMultiplier = pickSize;
+                VFXSplinePointAPI.LargerFirstPoint = largerFirst;
             }
 
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                if (GUILayout.Button("编辑控制点"))
-                    VFXSplinePointAPI.EnterPointMode(spline);
-                if (GUILayout.Button("移动 Spline 物体"))
-                    VFXSplinePointAPI.EnterObjectMode();
-            }
-
-            string toggleKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.TogglePointModeShortcut);
-            string appendKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.AppendModeShortcut);
-            string menuKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.ContextMenuShortcut);
-            EditorGUILayout.HelpBox(VFXSplinePointAPI.IsPointMode
-                ? "点编辑模式：隐藏 Unity Transform Gizmo，点击 Scene 空白处后仍保持当前 Spline 可编辑。Scene View 快捷键：" + toggleKey + " 切换模式，" + appendKey + " 追加点模式，" + menuKey + " 打开菜单，Esc 返回物体模式。"
-                : "物体模式：显示 Unity Transform Gizmo，用来移动整条 Spline。Scene View 按 " + toggleKey + "，或点击“编辑控制点”进入点编辑。",
-                MessageType.None);
+            EditorGUILayout.HelpBox("单一操作模式：Unity Transform Gizmo 始终可用，用来移动整条 Spline；控制点也可直接点选和拖动。A：连续追加点，M：点菜单 / 线段插点，F：聚焦当前点，Delete：删除当前点。", MessageType.None);
         }
-
-        public static VFXSplinePointEditMode DrawPointEditModePopup(VFXSplinePointEditMode current)
-        {
-            string[] labels = { "物体模式", "控制点模式" };
-            string[] tooltips =
-            {
-                "显示 Unity Transform Gizmo，用来移动整条 Spline 物体。",
-                "隐藏 Unity Transform Gizmo，用来选择和移动 Spline 控制点。"
-            };
-            GUIContent[] contents =
-            {
-                new GUIContent(labels[0], tooltips[0]),
-                new GUIContent(labels[1], tooltips[1])
-            };
-            int index = current == VFXSplinePointEditMode.Points ? 1 : 0;
-            index = EditorGUILayout.Popup(new GUIContent("编辑模式", "切换移动整条 Spline 物体，或编辑 Spline 控制点。Scene View 中也可以按 " + VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.TogglePointModeShortcut) + " 切换。"), index, contents);
-            return index == 1 ? VFXSplinePointEditMode.Points : VFXSplinePointEditMode.Object;
-        }
-
         private void DrawPathModeProperty(VFXSimpleSpline spline)
         {
             SerializedProperty pathModeProp = serializedObject.FindProperty("pathMode");
@@ -273,7 +257,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
             VFXSplinePathMode oldMode = (VFXSplinePathMode)pathModeProp.enumValueIndex;
             EditorGUI.BeginChangeCheck();
-            VFXSplinePathMode newMode = (VFXSplinePathMode)EditorGUILayout.EnumPopup(new GUIContent("路径模式", "选择路径的数学表示方式。Catmull-Rom 适合快速拉形状；Bezier 适合用手柄精细控制曲线。"), oldMode);
+            VFXSplinePathMode newMode = (VFXSplinePathMode)EditorGUILayout.EnumPopup(new GUIContent("路径模式", "选择路径的数学表示方式。Catmull-Rom 适合快速拉形状，Bezier 适合用手柄精细控制曲线。"), oldMode);
             if (!EditorGUI.EndChangeCheck() || newMode == oldMode)
                 return;
 
@@ -301,6 +285,480 @@ namespace VFXTimelineSplineTool.EditorTools
             action();
             EditorUtility.SetDirty(spline);
             SceneView.RepaintAll();
+        }
+
+        private void DrawSplineHealthTools(VFXSimpleSpline spline)
+        {
+            SplineHealthReport report = BuildSplineHealthReport(spline);
+
+            EditorGUILayout.Space(8);
+            EditorGUILayout.LabelField("路径健康检查", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(report.Message, report.HasIssues ? MessageType.Warning : MessageType.Info);
+
+            GUI.enabled = report.HasIssueLocation;
+            if (GUILayout.Button("选中第一个问题点"))
+                SelectHealthIssuePoints(spline, report);
+            GUI.enabled = true;
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUI.enabled = report.OverlappingPairCount > 0;
+                if (GUILayout.Button("删除重叠控制点"))
+                    RemoveOverlappingPoints(spline);
+
+                GUI.enabled = report.TooClosePairCount > 0;
+                if (GUILayout.Button("按距离均匀重排"))
+                    RedistributeHealthPointsByDistance(spline);
+
+                GUI.enabled = true;
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUI.enabled = report.LongBezierHandleCount > 0;
+                if (GUILayout.Button("收紧过长 Bezier 手柄"))
+                    ClampLongBezierHandles(spline);
+
+                GUI.enabled = report.CanEnableLoop;
+                if (GUILayout.Button("开启 Loop"))
+                    ModifySpline(spline, "Enable Spline Loop", () =>
+                    {
+                        spline.loop = true;
+                        spline.MarkDistanceCacheDirty();
+                    });
+
+                GUI.enabled = true;
+            }
+        }
+
+        private static SplineHealthReport BuildSplineHealthReport(VFXSimpleSpline spline)
+        {
+            SplineHealthReport report = new SplineHealthReport();
+            if (spline == null)
+            {
+                report.Message = "没有可检查的 Spline。";
+                return report;
+            }
+
+            List<Vector3> points = GetHealthLocalPoints(spline);
+            int count = points.Count;
+            if (count < 2)
+            {
+                report.Message = "控制点少于 2 个，路径无法形成有效线段。";
+                report.HasIssues = true;
+                return report;
+            }
+
+            for (int i = 0; i < count - 1; i++)
+                CountPointDistanceIssue(points[i], points[i + 1], report);
+
+            if (spline.loop && count > 2)
+                CountPointDistanceIssue(points[count - 1], points[0], report);
+
+            if (!spline.loop && count > 2)
+            {
+                float endpointDistance = Vector3.Distance(points[0], points[count - 1]);
+                report.CanEnableLoop = endpointDistance <= HealthLoopEndpointDistance;
+            }
+
+            if (spline.pathMode == VFXSplinePathMode.Bezier)
+                report.LongBezierHandleCount = CountLongBezierHandles(spline, points);
+
+            if (spline.loop && count > 2)
+            {
+                Vector3 startTangent = spline.GetTangent(0.001f, true);
+                Vector3 endTangent = spline.GetTangent(0.999f, true);
+                if (startTangent.sqrMagnitude > 0.000001f && endTangent.sqrMagnitude > 0.000001f)
+                    report.HasLoopSeamAngleWarning = Vector3.Angle(startTangent, endTangent) > HealthLoopSeamAngle;
+            }
+
+            AssignFirstHealthIssueLocation(spline, points, report);
+
+            report.HasIssues = report.OverlappingPairCount > 0 ||
+                               report.TooClosePairCount > 0 ||
+                               report.LongBezierHandleCount > 0 ||
+                               report.CanEnableLoop ||
+                               report.HasLoopSeamAngleWarning;
+
+            report.Message = BuildSplineHealthMessage(report, count, spline.pathMode);
+            return report;
+        }
+
+        private static List<Vector3> GetHealthLocalPoints(VFXSimpleSpline spline)
+        {
+            List<Vector3> points = new List<Vector3>();
+            if (spline == null)
+                return points;
+
+            int count = spline.GetActivePointCount();
+            for (int i = 0; i < count; i++)
+            {
+                if (spline.pathMode == VFXSplinePathMode.Bezier)
+                    points.Add(spline.GetEffectiveBezierPosition(i));
+                else
+                    points.Add(spline.GetEffectiveLocalPoint(i));
+            }
+
+            return points;
+        }
+
+        private static void CountPointDistanceIssue(Vector3 a, Vector3 b, SplineHealthReport report)
+        {
+            float distance = Vector3.Distance(a, b);
+            if (distance <= HealthDuplicatePointDistance)
+                report.OverlappingPairCount++;
+            else if (distance <= HealthClosePointDistance)
+                report.TooClosePairCount++;
+        }
+
+        private static int CountLongBezierHandles(VFXSimpleSpline spline, List<Vector3> points)
+        {
+            if (spline == null || spline.bezierPoints == null || points == null)
+                return 0;
+
+            int count = Mathf.Min(spline.bezierPoints.Count, points.Count);
+            int longHandleCount = 0;
+            for (int i = 0; i < count; i++)
+            {
+                VFXBezierPoint point = spline.bezierPoints[i];
+                if (point == null || point.handleMode == VFXBezierHandleMode.AutoSmooth)
+                    continue;
+
+                float prevDistance = GetNeighborDistance(points, i, -1, spline.loop);
+                float nextDistance = GetNeighborDistance(points, i, 1, spline.loop);
+                if (prevDistance > HealthDuplicatePointDistance && point.inTangent.magnitude > prevDistance * HealthLongHandleRatio)
+                    longHandleCount++;
+                if (nextDistance > HealthDuplicatePointDistance && point.outTangent.magnitude > nextDistance * HealthLongHandleRatio)
+                    longHandleCount++;
+            }
+
+            return longHandleCount;
+        }
+
+        private static float GetNeighborDistance(List<Vector3> points, int index, int direction, bool loop)
+        {
+            if (points == null || points.Count < 2)
+                return 0f;
+
+            int neighbor = index + direction;
+            if (loop)
+                neighbor = (neighbor + points.Count) % points.Count;
+            else
+                neighbor = Mathf.Clamp(neighbor, 0, points.Count - 1);
+
+            if (neighbor == index)
+                return 0f;
+
+            return Vector3.Distance(points[index], points[neighbor]);
+        }
+
+        private static string BuildSplineHealthMessage(SplineHealthReport report, int pointCount, VFXSplinePathMode pathMode)
+        {
+            if (!report.HasIssues)
+                return "未发现明显问题。当前 " + pathMode + " 路径共有 " + pointCount + " 个控制点。";
+
+            List<string> lines = new List<string>();
+            lines.Add("发现 " + pathMode + " 路径可能存在以下问题：");
+            if (report.OverlappingPairCount > 0)
+                lines.Add("- 有 " + report.OverlappingPairCount + " 处相邻控制点重叠，可能导致速度或切线异常。");
+            if (report.TooClosePairCount > 0)
+                lines.Add("- 有 " + report.TooClosePairCount + " 处相邻控制点距离过近，运动时可能出现局部抖动。");
+            if (report.LongBezierHandleCount > 0)
+                lines.Add("- 有 " + report.LongBezierHandleCount + " 个 Bezier 手柄相对线段过长，可能造成过冲或打圈。");
+            if (report.CanEnableLoop)
+                lines.Add("- 首尾控制点距离很近，但 Loop 还没开启。");
+            if (report.HasLoopSeamAngleWarning)
+                lines.Add("- Loop 首尾切线变化较大，循环播放时可能有方向跳变。");
+
+            return string.Join("\n", lines.ToArray());
+        }
+
+        private static void AssignFirstHealthIssueLocation(VFXSimpleSpline spline, List<Vector3> points, SplineHealthReport report)
+        {
+            if (spline == null || points == null || report == null || points.Count < 2)
+                return;
+
+            if (TryFindHealthDistanceIssue(points, spline.loop, HealthDuplicatePointDistance, true, report))
+                return;
+
+            if (TryFindHealthDistanceIssue(points, spline.loop, HealthClosePointDistance, false, report))
+                return;
+
+            if (spline.pathMode == VFXSplinePathMode.Bezier && TryFindLongBezierHandleIssue(spline, points, report))
+                return;
+
+            if ((report.CanEnableLoop || report.HasLoopSeamAngleWarning) && points.Count > 2)
+                SetHealthIssueLocation(report, 0, points.Count - 1);
+        }
+
+        private static bool TryFindHealthDistanceIssue(List<Vector3> points, bool loop, float threshold, bool duplicateOnly, SplineHealthReport report)
+        {
+            int count = points != null ? points.Count : 0;
+            if (count < 2)
+                return false;
+
+            for (int i = 0; i < count - 1; i++)
+            {
+                if (IsHealthDistanceIssue(points[i], points[i + 1], threshold, duplicateOnly))
+                {
+                    SetHealthIssueLocation(report, i, i + 1);
+                    return true;
+                }
+            }
+
+            if (loop && count > 2 && IsHealthDistanceIssue(points[count - 1], points[0], threshold, duplicateOnly))
+            {
+                SetHealthIssueLocation(report, count - 1, 0);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsHealthDistanceIssue(Vector3 a, Vector3 b, float threshold, bool duplicateOnly)
+        {
+            float distance = Vector3.Distance(a, b);
+            if (duplicateOnly)
+                return distance <= HealthDuplicatePointDistance;
+
+            return distance > HealthDuplicatePointDistance && distance <= threshold;
+        }
+
+        private static bool TryFindLongBezierHandleIssue(VFXSimpleSpline spline, List<Vector3> points, SplineHealthReport report)
+        {
+            if (spline == null || spline.bezierPoints == null || points == null)
+                return false;
+
+            int count = Mathf.Min(spline.bezierPoints.Count, points.Count);
+            for (int i = 0; i < count; i++)
+            {
+                VFXBezierPoint point = spline.bezierPoints[i];
+                if (point == null || point.handleMode == VFXBezierHandleMode.AutoSmooth)
+                    continue;
+
+                float prevDistance = GetNeighborDistance(points, i, -1, spline.loop);
+                if (prevDistance > HealthDuplicatePointDistance && point.inTangent.magnitude > prevDistance * HealthLongHandleRatio)
+                {
+                    SetHealthIssueLocation(report, i, -1);
+                    return true;
+                }
+
+                float nextDistance = GetNeighborDistance(points, i, 1, spline.loop);
+                if (nextDistance > HealthDuplicatePointDistance && point.outTangent.magnitude > nextDistance * HealthLongHandleRatio)
+                {
+                    SetHealthIssueLocation(report, i, -1);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void SetHealthIssueLocation(SplineHealthReport report, int firstIndex, int secondIndex)
+        {
+            report.HasIssueLocation = firstIndex >= 0;
+            report.FirstIssuePointIndex = firstIndex;
+            report.SecondIssuePointIndex = secondIndex;
+        }
+
+        private static void SelectHealthIssuePoints(VFXSimpleSpline spline, SplineHealthReport report)
+        {
+            if (spline == null || report == null || !report.HasIssueLocation)
+                return;
+
+            int count = spline.GetActivePointCount();
+            if (count <= 0)
+                return;
+
+            int firstIndex = Mathf.Clamp(report.FirstIssuePointIndex, 0, count - 1);
+            int secondIndex = report.SecondIssuePointIndex >= 0 ? Mathf.Clamp(report.SecondIssuePointIndex, 0, count - 1) : -1;
+
+            Undo.RecordObject(spline, "Select Spline Health Issue");
+            spline.selectedPointIndex = firstIndex;
+            spline.selectedPointIndices = new List<int>() { firstIndex };
+            if (secondIndex >= 0 && secondIndex != firstIndex)
+                spline.selectedPointIndices.Add(secondIndex);
+
+            VFXSplinePointAPI.Enabled = true;
+            VFXSplinePointAPI.SetActiveSpline(spline);
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private static void RemoveOverlappingPoints(VFXSimpleSpline spline)
+        {
+            if (spline == null)
+                return;
+
+            if (spline.pathMode == VFXSplinePathMode.Bezier)
+                RemoveOverlappingBezierPoints(spline);
+            else
+                RemoveOverlappingCatmullRomPoints(spline);
+        }
+
+        private static void RedistributeHealthPointsByDistance(VFXSimpleSpline spline)
+        {
+            if (spline == null)
+                return;
+
+            int pointCount = spline.GetActivePointCount();
+            if (pointCount < 2)
+                return;
+
+            if (spline.pathMode == VFXSplinePathMode.Bezier)
+                RedistributeHealthBezierPointsByDistance(spline, pointCount);
+            else
+                RedistributeHealthCatmullRomPointsByDistance(spline, pointCount);
+        }
+
+        private static void RedistributeHealthCatmullRomPointsByDistance(VFXSimpleSpline spline, int pointCount)
+        {
+            List<Vector3> resampled = new List<Vector3>(pointCount);
+            for (int i = 0; i < pointCount; i++)
+            {
+                float progress = spline.loop ? i / (float)pointCount : i / (float)(pointCount - 1);
+                resampled.Add(spline.GetLocalPoint(progress, true));
+            }
+
+            Undo.RecordObject(spline, "Redistribute Spline Points");
+            spline.localPoints = resampled;
+            spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, pointCount - 1);
+            spline.selectedPointIndices = new List<int>() { spline.selectedPointIndex };
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private static void RedistributeHealthBezierPointsByDistance(VFXSimpleSpline spline, int pointCount)
+        {
+            List<VFXBezierPoint> resampled = new List<VFXBezierPoint>(pointCount);
+            for (int i = 0; i < pointCount; i++)
+            {
+                float progress = spline.loop ? i / (float)pointCount : i / (float)(pointCount - 1);
+                VFXBezierPoint point = new VFXBezierPoint(spline.GetLocalPoint(progress, true));
+                point.handleMode = VFXBezierHandleMode.AutoSmooth;
+                resampled.Add(point);
+            }
+
+            Undo.RecordObject(spline, "Redistribute Bezier Points");
+            spline.bezierPoints = resampled;
+            spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, pointCount - 1);
+            spline.selectedPointIndices = new List<int>() { spline.selectedPointIndex };
+            spline.AutoSmoothAllBezierPoints();
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private static void RemoveOverlappingCatmullRomPoints(VFXSimpleSpline spline)
+        {
+            if (spline.localPoints == null || spline.localPoints.Count <= 2)
+                return;
+
+            List<Vector3> cleaned = new List<Vector3>();
+            for (int i = 0; i < spline.localPoints.Count; i++)
+            {
+                Vector3 point = spline.localPoints[i];
+                if (cleaned.Count == 0 || Vector3.Distance(cleaned[cleaned.Count - 1], point) > HealthDuplicatePointDistance)
+                    cleaned.Add(point);
+            }
+
+            if (spline.loop && cleaned.Count > 2 && Vector3.Distance(cleaned[0], cleaned[cleaned.Count - 1]) <= HealthDuplicatePointDistance)
+                cleaned.RemoveAt(cleaned.Count - 1);
+
+            if (cleaned.Count == spline.localPoints.Count || cleaned.Count < 2)
+                return;
+
+            Undo.RecordObject(spline, "Remove Overlapping Spline Points");
+            spline.localPoints = cleaned;
+            spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, cleaned.Count - 1);
+            spline.selectedPointIndices = new List<int>() { spline.selectedPointIndex };
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private static void RemoveOverlappingBezierPoints(VFXSimpleSpline spline)
+        {
+            if (spline.bezierPoints == null || spline.bezierPoints.Count <= 2)
+                return;
+
+            List<VFXBezierPoint> cleaned = new List<VFXBezierPoint>();
+            for (int i = 0; i < spline.bezierPoints.Count; i++)
+            {
+                VFXBezierPoint point = spline.bezierPoints[i];
+                if (point == null)
+                    continue;
+
+                if (cleaned.Count == 0 || Vector3.Distance(cleaned[cleaned.Count - 1].position, point.position) > HealthDuplicatePointDistance)
+                    cleaned.Add(point);
+            }
+
+            if (spline.loop && cleaned.Count > 2 && Vector3.Distance(cleaned[0].position, cleaned[cleaned.Count - 1].position) <= HealthDuplicatePointDistance)
+                cleaned.RemoveAt(cleaned.Count - 1);
+
+            if (cleaned.Count == spline.bezierPoints.Count || cleaned.Count < 2)
+                return;
+
+            Undo.RecordObject(spline, "Remove Overlapping Bezier Points");
+            spline.bezierPoints = cleaned;
+            spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, cleaned.Count - 1);
+            spline.selectedPointIndices = new List<int>() { spline.selectedPointIndex };
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private static void ClampLongBezierHandles(VFXSimpleSpline spline)
+        {
+            if (spline == null || spline.pathMode != VFXSplinePathMode.Bezier || spline.bezierPoints == null)
+                return;
+
+            List<Vector3> points = GetHealthLocalPoints(spline);
+            int count = Mathf.Min(spline.bezierPoints.Count, points.Count);
+            Undo.RecordObject(spline, "Clamp Long Bezier Handles");
+            for (int i = 0; i < count; i++)
+            {
+                VFXBezierPoint point = spline.bezierPoints[i];
+                if (point == null || point.handleMode == VFXBezierHandleMode.AutoSmooth)
+                    continue;
+
+                float prevDistance = GetNeighborDistance(points, i, -1, spline.loop);
+                float nextDistance = GetNeighborDistance(points, i, 1, spline.loop);
+                point.inTangent = ClampBezierTangent(point.inTangent, prevDistance);
+                point.outTangent = ClampBezierTangent(point.outTangent, nextDistance);
+            }
+
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private static Vector3 ClampBezierTangent(Vector3 tangent, float neighborDistance)
+        {
+            if (neighborDistance <= HealthDuplicatePointDistance)
+                return Vector3.zero;
+
+            float warningLength = neighborDistance * HealthLongHandleRatio;
+            if (tangent.magnitude <= warningLength)
+                return tangent;
+
+            float clampedLength = neighborDistance * HealthClampedHandleRatio;
+            return tangent.normalized * clampedLength;
+        }
+
+        private class SplineHealthReport
+        {
+            public bool HasIssues;
+            public bool HasIssueLocation;
+            public int FirstIssuePointIndex = -1;
+            public int SecondIssuePointIndex = -1;
+            public int OverlappingPairCount;
+            public int TooClosePairCount;
+            public int LongBezierHandleCount;
+            public bool CanEnableLoop;
+            public bool HasLoopSeamAngleWarning;
+            public string Message;
         }
 
         private void DrawShapePresetTools(VFXSimpleSpline spline)
@@ -356,9 +814,19 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             ModifySpline(spline, undoName, () =>
             {
+                spline.loop = IsClosedShapePreset(selectedShapePreset);
                 spline.localPoints = GeneratePresetPoints(selectedShapePreset);
-                if (spline.pathMode == VFXSplinePathMode.Bezier)
+                if (IsCornerShapePreset(selectedShapePreset))
+                {
+                    spline.pathMode = VFXSplinePathMode.Bezier;
                     spline.ConvertCatmullRomToBezier();
+                    ApplyCornerToAllBezierPoints(spline);
+                    spline.showAllPointHandles = false;
+                }
+                else if (spline.pathMode == VFXSplinePathMode.Bezier)
+                {
+                    spline.ConvertCatmullRomToBezier();
+                }
                 int activePointCount = spline.GetActivePointCount();
                 if (activePointCount > 0)
                 {
@@ -367,6 +835,58 @@ namespace VFXTimelineSplineTool.EditorTools
                 }
                 spline.MarkDistanceCacheDirty();
             });
+        }
+
+        private static bool IsClosedShapePreset(ShapePreset preset)
+        {
+            switch (preset)
+            {
+                case ShapePreset.Circle:
+                case ShapePreset.Ring:
+                case ShapePreset.Ellipse:
+                case ShapePreset.Square:
+                case ShapePreset.Rectangle:
+                case ShapePreset.Triangle:
+                case ShapePreset.Diamond:
+                case ShapePreset.Infinity:
+                case ShapePreset.Star:
+                case ShapePreset.Heart:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool IsCornerShapePreset(ShapePreset preset)
+        {
+            switch (preset)
+            {
+                case ShapePreset.Square:
+                case ShapePreset.Rectangle:
+                case ShapePreset.Triangle:
+                case ShapePreset.Diamond:
+                case ShapePreset.Star:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static void ApplyCornerToAllBezierPoints(VFXSimpleSpline spline)
+        {
+            if (spline == null || spline.bezierPoints == null)
+                return;
+
+            for (int i = 0; i < spline.bezierPoints.Count; i++)
+            {
+                VFXBezierPoint point = spline.bezierPoints[i];
+                if (point == null)
+                    continue;
+
+                point.handleMode = VFXBezierHandleMode.Free;
+                point.inTangent = Vector3.zero;
+                point.outTangent = Vector3.zero;
+            }
         }
 
         private static List<Vector3> GeneratePresetPoints(ShapePreset preset)
@@ -452,7 +972,6 @@ namespace VFXTimelineSplineTool.EditorTools
                     pts.Add(new Vector3(s, 0f, -s));
                     pts.Add(new Vector3(s, 0f, s));
                     pts.Add(new Vector3(-s, 0f, s));
-                    pts.Add(new Vector3(-s, 0f, -s));
                     break;
 
                 case ShapePreset.Rectangle:
@@ -460,14 +979,12 @@ namespace VFXTimelineSplineTool.EditorTools
                     pts.Add(new Vector3(w, 0f, -h));
                     pts.Add(new Vector3(w, 0f, h));
                     pts.Add(new Vector3(-w, 0f, h));
-                    pts.Add(new Vector3(-w, 0f, -h));
                     break;
 
                 case ShapePreset.Triangle:
                     pts.Add(new Vector3(0f, 0f, h));
                     pts.Add(new Vector3(w, 0f, -h));
                     pts.Add(new Vector3(-w, 0f, -h));
-                    pts.Add(new Vector3(0f, 0f, h));
                     break;
 
                 case ShapePreset.Diamond:
@@ -475,7 +992,6 @@ namespace VFXTimelineSplineTool.EditorTools
                     pts.Add(new Vector3(w, 0f, 0f));
                     pts.Add(new Vector3(0f, 0f, -h));
                     pts.Add(new Vector3(-w, 0f, 0f));
-                    pts.Add(new Vector3(0f, 0f, h));
                     break;
 
                 case ShapePreset.Infinity:
@@ -507,7 +1023,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 {
                     int tips = 5;
                     int n = tips * 2;
-                    for (int i = 0; i <= n; i++)
+                    for (int i = 0; i < n; i++)
                     {
                         float a = (i / (float)n) * Mathf.PI * 2f + Mathf.PI * 0.5f;
                         float r = (i % 2 == 0) ? s : s * 0.42f;
@@ -519,7 +1035,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 case ShapePreset.Heart:
                 {
                     int n = Mathf.Max(16, count);
-                    for (int i = 0; i <= n; i++)
+                    for (int i = 0; i < n; i++)
                     {
                         float t = (i / (float)n) * Mathf.PI * 2f;
                         float x = 16f * Mathf.Pow(Mathf.Sin(t), 3f);
@@ -546,6 +1062,9 @@ namespace VFXTimelineSplineTool.EditorTools
                 }
             }
 
+            if (ShouldPresetStartAtOrigin(preset))
+                MovePresetStartToOrigin(pts);
+
             ApplyPresetTransform(pts);
             if (pts.Count < 2)
             {
@@ -559,11 +1078,38 @@ namespace VFXTimelineSplineTool.EditorTools
         private static void AddClosedParametric(List<Vector3> pts, int count, System.Func<float, Vector3> func)
         {
             count = Mathf.Max(4, count);
-            for (int i = 0; i <= count; i++)
+            for (int i = 0; i < count; i++)
             {
                 float t = i / (float)count;
                 pts.Add(func(t));
             }
+        }
+
+        private static bool ShouldPresetStartAtOrigin(ShapePreset preset)
+        {
+            switch (preset)
+            {
+                case ShapePreset.Line:
+                case ShapePreset.Arc:
+                case ShapePreset.S_Curve:
+                case ShapePreset.Wave:
+                case ShapePreset.Zigzag:
+                case ShapePreset.Spiral:
+                case ShapePreset.U_Shape:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static void MovePresetStartToOrigin(List<Vector3> pts)
+        {
+            if (pts == null || pts.Count == 0)
+                return;
+
+            Vector3 offset = pts[0];
+            for (int i = 0; i < pts.Count; i++)
+                pts[i] -= offset;
         }
 
         private static void ApplyPresetTransform(List<Vector3> pts)
@@ -863,13 +1409,6 @@ namespace VFXTimelineSplineTool.EditorTools
             EditorUtility.SetDirty(spline);
             SceneView.RepaintAll();
         }
-
-        private void OnSceneGUI()
-        {
-            VFXSimpleSpline spline = (VFXSimpleSpline)target;
-            VFXSplineSceneDrawer.DrawSpline(spline, true);
-            VFXSplineSceneDrawer.DrawEditablePoints(spline);
-        }
     }
 
     [InitializeOnLoad]
@@ -884,6 +1423,12 @@ namespace VFXTimelineSplineTool.EditorTools
         private static Vector2 boxSelectCurrent;
         private static bool appendPointMode;
         private static VFXSimpleSpline appendPointModeSpline;
+        private static bool suppressObjectGizmoDuringPointDrag;
+        private static Vector2 lastSceneMousePosition = new Vector2(120f, 120f);
+        private const float SceneStatusDuplicatePointDistance = 0.001f;
+        private const float SceneStatusClosePointDistance = 0.05f;
+        private const float SceneStatusLongHandleRatio = 1.25f;
+        private const float SceneStatusLoopSeamAngle = 60f;
         private static readonly List<VFXSimpleSpline> cachedSplines = new List<VFXSimpleSpline>();
         private static bool splinesCacheDirty = true;
 
@@ -910,11 +1455,73 @@ namespace VFXTimelineSplineTool.EditorTools
             splinesCacheDirty = false;
         }
 
+        public static void ToggleAppendPointModeFromShortcut()
+        {
+            VFXSimpleSpline spline = VFXSplinePointAPI.ActiveSpline;
+            if (spline == null)
+                return;
+
+            if (VFXSplinePointAPI.IsPointEditingActive)
+                VFXSplinePointAPI.SetActiveSpline(spline);
+            else
+            {
+                VFXSplinePointAPI.Enabled = true;
+                VFXSplinePointAPI.SetActiveSpline(spline);
+            }
+            bool currentSplineOwnsMode = appendPointMode && appendPointModeSpline == spline;
+            appendPointMode = !currentSplineOwnsMode;
+            appendPointModeSpline = appendPointMode ? spline : null;
+            SceneView.RepaintAll();
+        }
+
+        public static void ExitAppendPointMode()
+        {
+            if (!appendPointMode && appendPointModeSpline == null)
+                return;
+
+            appendPointMode = false;
+            appendPointModeSpline = null;
+            SceneView.RepaintAll();
+        }
+
+        public static void OpenContextMenuFromShortcut()
+        {
+            VFXSimpleSpline spline = VFXSplinePointAPI.ActiveSpline;
+            if (spline == null)
+                return;
+
+            if (VFXSplinePointAPI.IsPointEditingActive)
+                VFXSplinePointAPI.SetActiveSpline(spline);
+            else
+            {
+                VFXSplinePointAPI.Enabled = true;
+                VFXSplinePointAPI.SetActiveSpline(spline);
+            }
+            int count = spline.GetActivePointCount();
+            int pointIndex;
+            if (TryFindNearestPointIndex(spline, count, lastSceneMousePosition, out pointIndex))
+            {
+                ShowPointContextMenu(spline, pointIndex);
+                return;
+            }
+
+            float rawProgress;
+            if (TryFindNearestRawProgressOnCurve(spline, lastSceneMousePosition, out rawProgress))
+            {
+                InsertPointOnCurveAtRawProgress(spline, rawProgress);
+                return;
+            }
+
+            SceneView.RepaintAll();
+        }
+
         private static void DuringSceneGUI(SceneView view)
         {
-            if (Event.current == null || Event.current.type != EventType.Repaint) return;
+            Event e = Event.current;
+            if (e == null) return;
 
             RefreshSplinesCacheIfNeeded();
+            VFXSimpleSpline selectedSpline = VFXSplinePointAPI.GetSelectedSpline();
             for (int i = cachedSplines.Count - 1; i >= 0; i--)
             {
                 VFXSimpleSpline spline = cachedSplines[i];
@@ -924,14 +1531,27 @@ namespace VFXTimelineSplineTool.EditorTools
                     continue;
                 }
 
-                if (!spline.alwaysShowPathInSceneView && Selection.activeGameObject != spline.gameObject) continue;
-                DrawSpline(spline, Selection.activeGameObject == spline.gameObject);
+                if (spline == selectedSpline) continue;
+                if (!spline.alwaysShowPathInSceneView) continue;
+                DrawSpline(spline, false);
+            }
+
+            if (selectedSpline != null)
+            {
+                DrawSpline(selectedSpline, true);
+                DrawEditablePoints(selectedSpline);
             }
         }
 
         public static void DrawSpline(VFXSimpleSpline spline, bool selected)
         {
             if (spline == null || spline.GetActivePointCount() < 2) return;
+
+            HandleSplineLineSelection(spline, selected);
+
+            Event e = Event.current;
+            if (e == null || e.type != EventType.Repaint)
+                return;
 
             int steps = Mathf.Max(8, spline.resolution);
             Vector3[] points = new Vector3[steps + 1];
@@ -948,11 +1568,38 @@ namespace VFXTimelineSplineTool.EditorTools
                 DrawDirectionArrows(spline);
         }
 
+        private static void HandleSplineLineSelection(VFXSimpleSpline spline, bool selected)
+        {
+            Event e = Event.current;
+            if (e == null || spline == null || selected || e.alt)
+                return;
+
+            int controlId = GUIUtility.GetControlID(spline.GetInstanceID(), FocusType.Passive);
+            if (e.type == EventType.Layout)
+            {
+                float rawProgress;
+                float distance;
+                if (!TryFindNearestRawProgressOnCurve(spline, e.mousePosition, out rawProgress, out distance))
+                    distance = float.MaxValue;
+                HandleUtility.AddControl(controlId, distance);
+                return;
+            }
+
+            if (e.type != EventType.MouseDown || e.button != 0 || HandleUtility.nearestControl != controlId)
+                return;
+
+            Selection.activeGameObject = spline.gameObject;
+            VFXSplinePointAPI.SetActiveSpline(spline);
+            e.Use();
+            SceneView.RepaintAll();
+        }
+
         private static void DrawProgressMarks(VFXSimpleSpline spline)
         {
             Handles.color = spline.progressMarkColor;
             int count = Mathf.Max(1, spline.progressMarkCount);
-            for (int i = 0; i <= count; i++)
+            int max = spline.loop ? count - 1 : count;
+            for (int i = 0; i <= max; i++)
             {
                 float p = i / (float)count;
                 Vector3 pos = spline.GetPoint(p, spline.progressMarksUseDistance);
@@ -982,6 +1629,10 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             if (spline == null) return;
 
+            Event currentEvent = Event.current;
+            if (currentEvent != null)
+                lastSceneMousePosition = currentEvent.mousePosition;
+
             int count = spline.GetActivePointCount();
             if (count == 0) return;
 
@@ -991,32 +1642,32 @@ namespace VFXTimelineSplineTool.EditorTools
 
             DrawSceneStatusHint(spline, count);
 
-            if (HandleAppendPointModeShortcut(spline))
-                return;
+            bool mouseNearPoint = currentEvent != null && IsMouseNearAnyPoint(spline, count, currentEvent.mousePosition);
+            bool mouseNearBezierHandle = currentEvent != null && IsMouseNearVisibleBezierTangentHandle(spline, count, currentEvent.mousePosition);
+            bool mouseNearMultiPointHandle = currentEvent != null && IsMouseNearMultiPointMoveHandle(spline, count, currentEvent.mousePosition);
+            if (currentEvent != null)
+            {
+                if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0 && !currentEvent.alt && (mouseNearPoint || mouseNearBezierHandle || mouseNearMultiPointHandle))
+                    suppressObjectGizmoDuringPointDrag = true;
+                else if (currentEvent.type == EventType.MouseUp || currentEvent.type == EventType.Ignore)
+                    suppressObjectGizmoDuringPointDrag = false;
+            }
+            Tools.hidden = suppressObjectGizmoDuringPointDrag || mouseNearPoint || mouseNearBezierHandle || mouseNearMultiPointHandle;
 
             if (VFXSplinePointAPI.HandleShortcut(Event.current, spline))
                 return;
 
-            if (!VFXSplinePointAPI.IsPointMode)
+            if (!VFXSplinePointAPI.IsPointEditingActive)
             {
                 if (appendPointModeSpline == spline)
                     appendPointMode = false;
                 return;
             }
 
-            if (HandlePointContextMenuShortcut(spline, count))
-                return;
-
             if (HandleAppendPointMode(spline, count))
                 return;
 
-            if (spline.pathMode != VFXSplinePathMode.Bezier && HandleBlankAppendPoint(spline))
-                return;
-
             if (HandleBoxSelection(spline, count))
-                return;
-
-            if (TryForceSelectNearestPoint(spline, count))
                 return;
 
             bool hasMultiSelection = spline.selectedPointIndices != null && spline.selectedPointIndices.Count > 1;
@@ -1037,10 +1688,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
                 Handles.color = isDynamicBoundPoint ? new Color(0.2f, 1f, 0.35f, 1f) : (isSelectedPoint ? Color.yellow : spline.pathColor);
 
-                if (spline.pathMode == VFXSplinePathMode.Bezier)
-                    HandleBezierPointContextMenu(spline, i, world, size);
-
-                // 未选中的控制点只显示小球；点击小球后，才显示该点的 Position Handle。
+                // 未选中的控制点只显示小球；选中后才显示 PositionHandle。
                 bool additiveSelect = Event.current != null && (Event.current.control || Event.current.command);
                 if (Handles.Button(world, Quaternion.identity, size, pickSize, Handles.SphereHandleCap))
                 {
@@ -1057,7 +1705,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 {
                     GUIStyle style = new GUIStyle(EditorStyles.boldLabel);
                     style.normal.textColor = isDynamicBoundPoint ? new Color(0.2f, 1f, 0.35f, 1f) : (isSelectedPoint ? Color.yellow : Color.white);
-                    string label = isSelectedPoint ? (i + "  ◀") : i.ToString();
+                    string label = isSelectedPoint ? (i + "  ●") : i.ToString();
                     if (isDynamicBoundPoint && spline.showDynamicBindingLabels)
                         label += i == 0 ? "  Start Bound" : "  End Bound";
                     Handles.Label(world + Vector3.up * size * 1.5f, label, style);
@@ -1098,18 +1746,19 @@ namespace VFXTimelineSplineTool.EditorTools
                 }
             }
 
-            if (spline.pathMode == VFXSplinePathMode.Bezier)
-            {
-                HandleBezierCurveContextMenu(spline);
-            }
-
-            HandleBlankAppendPoint(spline);
+            TryForceSelectNearestPoint(spline, count);
         }
 
         private static bool TryForceSelectNearestPoint(VFXSimpleSpline spline, int count)
         {
             Event e = Event.current;
-            if (e == null || !e.shift || e.type != EventType.MouseDown || e.button != 0 || spline == null || count <= 0)
+            if (e == null || e.alt || e.type != EventType.MouseDown || e.button != 0 || spline == null || count <= 0)
+                return false;
+
+            if (IsMouseNearVisibleBezierTangentHandle(spline, count, e.mousePosition))
+                return false;
+
+            if (IsMouseNearMultiPointMoveHandle(spline, count, e.mousePosition))
                 return false;
 
             int bestIndex = -1;
@@ -1129,9 +1778,15 @@ namespace VFXTimelineSplineTool.EditorTools
             if (bestIndex < 0 || bestDistance > maxDistance)
                 return false;
 
-            VFXSplinePointAPI.SelectPoint(spline, bestIndex);
-            SetSinglePointSelection(spline, bestIndex);
+            Undo.RecordObject(spline, "Select Spline Point");
+            bool additiveSelect = e.control || e.command;
+            if (additiveSelect)
+                TogglePointSelection(spline, bestIndex);
+            else
+                SetSinglePointSelection(spline, bestIndex);
+            EditorUtility.SetDirty(spline);
             e.Use();
+            SceneView.RepaintAll();
             return true;
         }
 
@@ -1141,21 +1796,20 @@ namespace VFXTimelineSplineTool.EditorTools
             if (e == null || e.type != EventType.Repaint || spline == null)
                 return;
 
-            bool pointMode = VFXSplinePointAPI.IsPointMode;
+            bool pointMode = VFXSplinePointAPI.IsPointEditingActive;
             bool appendModeActive = appendPointMode && appendPointModeSpline == spline;
             int selectedCount = spline.selectedPointIndices != null ? spline.selectedPointIndices.Count : 0;
-            string modeName = pointMode ? (appendModeActive ? "\u8ffd\u52a0\u70b9\u6a21\u5f0f" : "\u70b9\u7f16\u8f91\u6a21\u5f0f") : "\u7269\u4f53\u6a21\u5f0f";
+            string modeName = pointMode ? (appendModeActive ? "\u8ffd\u52a0\u70b9" : "Spline \u7f16\u8f91") : "Spline";
             string pathName = spline.pathMode == VFXSplinePathMode.Bezier ? "Bezier" : "Catmull-Rom";
+            string loopInfo = spline.loop ? "Loop On" : "Loop Off";
             string selectionInfo = selectedCount > 1 ? "\u5df2\u9009 " + selectedCount + " \u4e2a\u70b9" : "\u5f53\u524d\u70b9 " + Mathf.Clamp(spline.selectedPointIndex, 0, Mathf.Max(0, count - 1));
-            string title = "VFX Spline | " + modeName + " | " + pathName + " | " + selectionInfo;
-            string toggleKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.TogglePointModeShortcut);
-            string appendKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.AppendModeShortcut);
-            string menuKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.ContextMenuShortcut);
+            string title = "VFX Spline | " + modeName + " | " + pathName + " | " + loopInfo;
+            string status = selectionInfo + " | \u5171 " + count + " \u4e2a\u70b9 | " + BuildSceneHealthSummary(spline, count);
             string shortcuts = appendModeActive
-                ? "\u5de6\u952e\uff1a\u6dfb\u52a0\u70b9    " + appendKey + " / Esc\uff1a\u9000\u51fa\u8ffd\u52a0    Alt + \u9f20\u6807\uff1a\u89c6\u89d2"
-                : toggleKey + "\uff1a\u5207\u6362\u70b9\u7f16\u8f91    " + appendKey + "\uff1a\u8ffd\u52a0\u6a21\u5f0f    " + menuKey + "\uff1a\u83dc\u5355    Ctrl\uff1a\u591a\u9009/\u6846\u9009    F\uff1a\u805a\u7126    Del\uff1a\u5220\u9664";
+                ? "\u5de6\u952e\uff1a\u6dfb\u52a0\u70b9    A / Esc\uff1a\u9000\u51fa\u8ffd\u52a0    Alt + \u9f20\u6807\uff1a\u89c6\u89d2"
+                : "A\uff1a\u8ffd\u52a0\u6a21\u5f0f    M\uff1a\u70b9\u83dc\u5355/\u7ebf\u6bb5\u63d2\u70b9    Ctrl\uff1a\u591a\u9009/\u6846\u9009    F\uff1a\u805a\u7126    Del\uff1a\u5220\u9664";
 
-            Rect rect = new Rect(10f, 10f, 620f, 44f);
+            Rect rect = new Rect(10f, 10f, 680f, 62f);
             Handles.BeginGUI();
             Color oldColor = GUI.color;
             GUI.color = new Color(0.1f, 0.1f, 0.1f, 0.82f);
@@ -1168,39 +1822,108 @@ namespace VFXTimelineSplineTool.EditorTools
             bodyStyle.normal.textColor = new Color(0.86f, 0.86f, 0.86f, 1f);
 
             GUI.Label(new Rect(rect.x + 8f, rect.y + 5f, rect.width - 16f, 18f), title, titleStyle);
-            GUI.Label(new Rect(rect.x + 8f, rect.y + 24f, rect.width - 16f, 16f), shortcuts, bodyStyle);
+            GUI.Label(new Rect(rect.x + 8f, rect.y + 24f, rect.width - 16f, 16f), status, bodyStyle);
+            GUI.Label(new Rect(rect.x + 8f, rect.y + 42f, rect.width - 16f, 16f), shortcuts, bodyStyle);
             Handles.EndGUI();
         }
 
-        private static bool HandleAppendPointModeShortcut(VFXSimpleSpline spline)
+        private static string BuildSceneHealthSummary(VFXSimpleSpline spline, int count)
         {
-            Event e = Event.current;
-            if (e == null || spline == null || e.type != EventType.KeyDown)
-                return false;
+            if (spline == null || count < 2)
+                return "\u5065\u5eb7\uff1a\u63a7\u5236\u70b9\u4e0d\u8db3";
 
-            bool currentSplineOwnsMode = appendPointMode && appendPointModeSpline == spline;
-            if (e.keyCode == KeyCode.Escape && currentSplineOwnsMode)
+            int duplicatePairs = 0;
+            int closePairs = 0;
+            for (int i = 0; i < count - 1; i++)
+                CountScenePointDistanceIssue(GetSceneStatusLocalPoint(spline, i), GetSceneStatusLocalPoint(spline, i + 1), ref duplicatePairs, ref closePairs);
+
+            if (spline.loop && count > 2)
+                CountScenePointDistanceIssue(GetSceneStatusLocalPoint(spline, count - 1), GetSceneStatusLocalPoint(spline, 0), ref duplicatePairs, ref closePairs);
+
+            int longHandles = spline.pathMode == VFXSplinePathMode.Bezier ? CountSceneLongBezierHandles(spline, count) : 0;
+            bool loopSeamWarning = HasSceneLoopSeamWarning(spline, count);
+
+            if (duplicatePairs == 0 && closePairs == 0 && longHandles == 0 && !loopSeamWarning)
+                return "\u5065\u5eb7\uff1aOK";
+
+            List<string> issues = new List<string>();
+            if (duplicatePairs > 0)
+                issues.Add(duplicatePairs + " \u5904\u91cd\u53e0");
+            if (closePairs > 0)
+                issues.Add(closePairs + " \u5904\u8fc7\u8fd1");
+            if (longHandles > 0)
+                issues.Add(longHandles + " \u4e2a\u957f\u624b\u67c4");
+            if (loopSeamWarning)
+                issues.Add("Loop \u5207\u7ebf\u8df3\u53d8");
+
+            return "\u5065\u5eb7\uff1a" + string.Join(" / ", issues.ToArray());
+        }
+
+        private static Vector3 GetSceneStatusLocalPoint(VFXSimpleSpline spline, int index)
+        {
+            return spline.pathMode == VFXSplinePathMode.Bezier
+                ? spline.GetEffectiveBezierPosition(index)
+                : spline.GetEffectiveLocalPoint(index);
+        }
+
+        private static void CountScenePointDistanceIssue(Vector3 a, Vector3 b, ref int duplicatePairs, ref int closePairs)
+        {
+            float distance = Vector3.Distance(a, b);
+            if (distance <= SceneStatusDuplicatePointDistance)
+                duplicatePairs++;
+            else if (distance <= SceneStatusClosePointDistance)
+                closePairs++;
+        }
+
+        private static int CountSceneLongBezierHandles(VFXSimpleSpline spline, int count)
+        {
+            if (spline == null || spline.bezierPoints == null)
+                return 0;
+
+            int longHandleCount = 0;
+            int safeCount = Mathf.Min(count, spline.bezierPoints.Count);
+            for (int i = 0; i < safeCount; i++)
             {
-                appendPointMode = false;
-                appendPointModeSpline = null;
-                SceneView.RepaintAll();
-                e.Use();
-                return true;
+                VFXBezierPoint point = spline.bezierPoints[i];
+                if (point == null || point.handleMode == VFXBezierHandleMode.AutoSmooth)
+                    continue;
+
+                float prevDistance = GetSceneNeighborDistance(spline, i, -1, safeCount);
+                float nextDistance = GetSceneNeighborDistance(spline, i, 1, safeCount);
+                if (prevDistance > SceneStatusDuplicatePointDistance && point.inTangent.magnitude > prevDistance * SceneStatusLongHandleRatio)
+                    longHandleCount++;
+                if (nextDistance > SceneStatusDuplicatePointDistance && point.outTangent.magnitude > nextDistance * SceneStatusLongHandleRatio)
+                    longHandleCount++;
             }
 
-            if (!VFXSplinePointAPI.IsPointMode)
+            return longHandleCount;
+        }
+
+        private static float GetSceneNeighborDistance(VFXSimpleSpline spline, int index, int direction, int count)
+        {
+            int neighbor = index + direction;
+            if (spline.loop)
+                neighbor = (neighbor + count) % count;
+            else
+                neighbor = Mathf.Clamp(neighbor, 0, count - 1);
+
+            if (neighbor == index)
+                return 0f;
+
+            return Vector3.Distance(GetSceneStatusLocalPoint(spline, index), GetSceneStatusLocalPoint(spline, neighbor));
+        }
+
+        private static bool HasSceneLoopSeamWarning(VFXSimpleSpline spline, int count)
+        {
+            if (spline == null || !spline.loop || count < 3)
                 return false;
 
-            if (VFXSplinePointAPI.IsPlainKey(e, VFXSplinePointAPI.AppendModeShortcut))
-            {
-                appendPointMode = !currentSplineOwnsMode;
-                appendPointModeSpline = appendPointMode ? spline : null;
-                SceneView.RepaintAll();
-                e.Use();
-                return true;
-            }
+            Vector3 startTangent = spline.GetTangent(0.001f, true);
+            Vector3 endTangent = spline.GetTangent(0.999f, true);
+            if (startTangent.sqrMagnitude <= 0.000001f || endTangent.sqrMagnitude <= 0.000001f)
+                return false;
 
-            return false;
+            return Vector3.Angle(startTangent, endTangent) > SceneStatusLoopSeamAngle;
         }
 
         private static bool HandleAppendPointMode(VFXSimpleSpline spline, int count)
@@ -1221,40 +1944,19 @@ namespace VFXTimelineSplineTool.EditorTools
             if (e.type == EventType.Repaint)
                 DrawAppendPointModeHint(e.mousePosition);
 
+            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
+            {
+                ExitAppendPointMode();
+                e.Use();
+                return true;
+            }
+
             if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
             {
                 if (count > 0 && IsMouseNearAnyPoint(spline, count, e.mousePosition))
                     return false;
 
                 AppendPointAtMouse(spline, e.mousePosition);
-                e.Use();
-                return true;
-            }
-
-            return false;
-        }
-
-        private static bool HandlePointContextMenuShortcut(VFXSimpleSpline spline, int count)
-        {
-            Event e = Event.current;
-            if (e == null || spline == null || e.type != EventType.KeyDown)
-                return false;
-
-            if (!VFXSplinePointAPI.IsPlainKey(e, VFXSplinePointAPI.ContextMenuShortcut))
-                return false;
-
-            int pointIndex;
-            if (TryFindNearestPointIndex(spline, count, e.mousePosition, out pointIndex))
-            {
-                ShowPointContextMenu(spline, pointIndex);
-                e.Use();
-                return true;
-            }
-
-            float rawProgress;
-            if (TryFindNearestRawProgressOnCurve(spline, e.mousePosition, out rawProgress))
-            {
-                ShowCurveContextMenu(spline, rawProgress);
                 e.Use();
                 return true;
             }
@@ -1298,14 +2000,13 @@ namespace VFXTimelineSplineTool.EditorTools
 
         private static void DrawAppendPointModeHint(Vector2 mousePosition)
         {
-            string appendKey = VFXSplinePointAPI.GetShortcutLabel(VFXSplinePointAPI.AppendModeShortcut);
             Rect rect = new Rect(mousePosition.x + 16f, mousePosition.y + 16f, 230f, 24f);
             Handles.BeginGUI();
             Color oldColor = GUI.color;
             GUI.color = new Color(0.12f, 0.12f, 0.12f, 0.92f);
             GUI.Box(rect, GUIContent.none, EditorStyles.toolbar);
             GUI.color = oldColor;
-            GUI.Label(rect, " \u8ffd\u52a0\u70b9\uff1a\u5de6\u952e / " + appendKey + " / Esc", EditorStyles.whiteLabel);
+            GUI.Label(rect, " \u8ffd\u52a0\u70b9\uff1a\u5de6\u952e / A / Esc", EditorStyles.whiteLabel);
             Handles.EndGUI();
         }
 
@@ -1497,6 +2198,64 @@ namespace VFXTimelineSplineTool.EditorTools
             return false;
         }
 
+        private static bool IsMouseNearVisibleBezierTangentHandle(VFXSimpleSpline spline, int count, Vector2 mousePosition)
+        {
+            if (spline == null || spline.pathMode != VFXSplinePathMode.Bezier || spline.bezierPoints == null)
+                return false;
+
+            float maxDistance = 18f;
+            for (int i = 0; i < count; i++)
+            {
+                bool isVisiblePoint = spline.showAllPointHandles || spline.selectedPointIndex == i || IsPointMultiSelected(spline, i);
+                if (!isVisiblePoint || i < 0 || i >= spline.bezierPoints.Count || spline.bezierPoints[i] == null)
+                    continue;
+
+                bool canUseInTangent = i > 0 || spline.loop;
+                bool canUseOutTangent = i < count - 1 || spline.loop;
+
+                if (canUseInTangent)
+                {
+                    Vector2 inGui = HandleUtility.WorldToGUIPoint(spline.GetBezierInTangentWorldPosition(i));
+                    if (Vector2.Distance(mousePosition, inGui) <= maxDistance)
+                        return true;
+                }
+
+                if (canUseOutTangent)
+                {
+                    Vector2 outGui = HandleUtility.WorldToGUIPoint(spline.GetBezierOutTangentWorldPosition(i));
+                    if (Vector2.Distance(mousePosition, outGui) <= maxDistance)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsMouseNearMultiPointMoveHandle(VFXSimpleSpline spline, int count, Vector2 mousePosition)
+        {
+            if (spline == null || spline.selectedPointIndices == null || spline.selectedPointIndices.Count <= 1)
+                return false;
+
+            Vector3 center = Vector3.zero;
+            int selectedCount = 0;
+            for (int i = 0; i < spline.selectedPointIndices.Count; i++)
+            {
+                int index = spline.selectedPointIndices[i];
+                if (index < 0 || index >= count)
+                    continue;
+
+                center += spline.GetEffectiveWorldPoint(index);
+                selectedCount++;
+            }
+
+            if (selectedCount <= 1)
+                return false;
+
+            center /= selectedCount;
+            Vector2 centerGui = HandleUtility.WorldToGUIPoint(center);
+            return Vector2.Distance(mousePosition, centerGui) <= Mathf.Max(36f, 12f * VFXSplinePointAPI.PickSizeMultiplier);
+        }
+
         private static Rect GetBoxSelectionRect()
         {
             float xMin = Mathf.Min(boxSelectStart.x, boxSelectCurrent.x);
@@ -1519,20 +2278,6 @@ namespace VFXTimelineSplineTool.EditorTools
             Handles.EndGUI();
         }
 
-        private static bool IsShiftRightMouseDown(Event e)
-        {
-            if (e == null || !e.shift)
-                return false;
-
-            if (e.type == EventType.ContextClick)
-                return true;
-
-            if ((e.type == EventType.MouseDown || e.rawType == EventType.MouseDown) && e.button == 1)
-                return true;
-
-            return false;
-        }
-
         private static void AddAlignSelectedPointsMenu(GenericMenu menu, VFXSimpleSpline spline)
         {
             menu.AddItem(new GUIContent("多选对齐/上对齐 (Y 最大)"), false, () => AlignSelectedPoints(spline, 1, true));
@@ -1541,8 +2286,11 @@ namespace VFXTimelineSplineTool.EditorTools
             menu.AddItem(new GUIContent("多选对齐/左对齐 (X 最小)"), false, () => AlignSelectedPoints(spline, 0, false));
             menu.AddItem(new GUIContent("多选对齐/前对齐 (Z 最大)"), false, () => AlignSelectedPoints(spline, 2, true));
             menu.AddItem(new GUIContent("多选对齐/后对齐 (Z 最小)"), false, () => AlignSelectedPoints(spline, 2, false));
+            menu.AddSeparator("多选归零/");
+            menu.AddItem(new GUIContent("多选归零/Local X = 0"), false, () => ZeroSelectedPointsLocalAxis(spline, 0));
+            menu.AddItem(new GUIContent("多选归零/Local Y = 0"), false, () => ZeroSelectedPointsLocalAxis(spline, 1));
+            menu.AddItem(new GUIContent("多选归零/Local Z = 0"), false, () => ZeroSelectedPointsLocalAxis(spline, 2));
         }
-
         private static void AlignSelectedPoints(VFXSimpleSpline spline, int axis, bool useMax)
         {
             if (spline == null || spline.selectedPointIndices == null || spline.selectedPointIndices.Count <= 1)
@@ -1591,6 +2339,41 @@ namespace VFXTimelineSplineTool.EditorTools
             SceneView.RepaintAll();
         }
 
+        private static void ZeroSelectedPointsLocalAxis(VFXSimpleSpline spline, int axis)
+        {
+            if (spline == null || spline.selectedPointIndices == null || spline.selectedPointIndices.Count <= 1)
+                return;
+
+            int count = spline.GetActivePointCount();
+            Undo.RecordObject(spline, "Zero Selected Spline Points Axis");
+            for (int i = 0; i < spline.selectedPointIndices.Count; i++)
+            {
+                int index = spline.selectedPointIndices[i];
+                if (index < 0 || index >= count)
+                    continue;
+
+                Vector3 local = spline.transform.InverseTransformPoint(spline.GetEffectiveWorldPoint(index));
+                SetAxisValue(ref local, axis, 0f);
+                Vector3 world = spline.transform.TransformPoint(local);
+
+                Transform boundTransform = spline.GetDynamicBindingTransformForPoint(index);
+                if (spline.IsPointDynamicallyBound(index) && boundTransform != null)
+                {
+                    Undo.RecordObject(boundTransform, "Zero Dynamic Binding Transform Axis");
+                    boundTransform.position = world;
+                    EditorUtility.SetDirty(boundTransform);
+                }
+                else
+                {
+                    spline.SetActivePointWorldPosition(index, world);
+                }
+            }
+
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
         private static float GetAxisValue(Vector3 value, int axis)
         {
             if (axis == 0) return value.x;
@@ -1605,96 +2388,23 @@ namespace VFXTimelineSplineTool.EditorTools
             else value.z = axisValue;
         }
 
-        private static void HandleBezierCurveContextMenu(VFXSimpleSpline spline)
-        {
-            Event e = Event.current;
-            if (!IsShiftRightMouseDown(e))
-                return;
-
-            float rawProgress;
-            if (!TryFindNearestRawProgressOnCurve(spline, e.mousePosition, out rawProgress))
-                return;
-
-            GenericMenu menu = new GenericMenu();
-            menu.AddItem(new GUIContent("在这里插入 Bezier 点"), false, () =>
-            {
-                Undo.RecordObject(spline, "Insert Bezier Point");
-                int inserted = spline.InsertBezierPointAtRawProgress(rawProgress);
-                if (inserted >= 0)
-                {
-                    EditorUtility.SetDirty(spline);
-                    SceneView.RepaintAll();
-                }
-            });
-            e.Use();
-            suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
-            menu.ShowAsContext();
-        }
-
-        private static void ShowBezierCurveContextMenu(VFXSimpleSpline spline, float rawProgress)
-        {
-            GenericMenu menu = new GenericMenu();
-            menu.AddItem(new GUIContent("Insert Bezier Point Here"), false, () =>
-            {
-                Undo.RecordObject(spline, "Insert Bezier Point");
-                int inserted = spline.InsertBezierPointAtRawProgress(rawProgress);
-                if (inserted >= 0)
-                {
-                    EditorUtility.SetDirty(spline);
-                    SceneView.RepaintAll();
-                }
-            });
-            suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
-            menu.ShowAsContext();
-        }
-
-        private static void ShowCurveContextMenu(VFXSimpleSpline spline, float rawProgress)
+        private static void InsertPointOnCurveAtRawProgress(VFXSimpleSpline spline, float rawProgress)
         {
             if (spline == null)
                 return;
 
+            Undo.RecordObject(spline, spline.pathMode == VFXSplinePathMode.Bezier ? "Insert Bezier Point" : "Insert Catmull-Rom Point");
+            int inserted;
             if (spline.pathMode == VFXSplinePathMode.Bezier)
+                inserted = spline.InsertBezierPointAtRawProgress(rawProgress);
+            else
+                inserted = spline.InsertCatmullRomPointAtRawProgress(rawProgress);
+
+            if (inserted >= 0)
             {
-                ShowBezierCurveContextMenu(spline, rawProgress);
-                return;
+                EditorUtility.SetDirty(spline);
+                SceneView.RepaintAll();
             }
-
-            GenericMenu menu = new GenericMenu();
-            menu.AddItem(new GUIContent("\u5728\u8fd9\u91cc\u63d2\u5165 Catmull-Rom \u70b9"), false, () =>
-            {
-                Undo.RecordObject(spline, "Insert Catmull-Rom Point");
-                int inserted = spline.InsertCatmullRomPointAtRawProgress(rawProgress);
-                if (inserted >= 0)
-                {
-                    EditorUtility.SetDirty(spline);
-                    SceneView.RepaintAll();
-                }
-            });
-            suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
-            menu.ShowAsContext();
-        }
-
-        private static bool HandleBlankAppendPoint(VFXSimpleSpline spline)
-        {
-            Event e = Event.current;
-            if (!IsShiftRightMouseDown(e))
-                return false;
-
-            int count = spline != null ? spline.GetActivePointCount() : 0;
-            if (count > 0 && IsMouseNearAnyPoint(spline, count, e.mousePosition))
-                return false;
-
-            Vector3 worldPosition;
-            if (!TryGetWorldPointOnSplineEditPlane(spline, e.mousePosition, out worldPosition))
-                return false;
-
-            Undo.RecordObject(spline, "Append Spline Point");
-            spline.AppendPointAtWorldPosition(worldPosition);
-            EditorUtility.SetDirty(spline);
-            SceneView.RepaintAll();
-            e.Use();
-            suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
-            return true;
         }
 
         private static bool TryGetWorldPointOnSplineEditPlane(VFXSimpleSpline spline, Vector2 mousePosition, out Vector3 worldPosition)
@@ -1727,12 +2437,18 @@ namespace VFXTimelineSplineTool.EditorTools
 
         private static bool TryFindNearestRawProgressOnCurve(VFXSimpleSpline spline, Vector2 mousePosition, out float rawProgress)
         {
+            float bestDistance;
+            return TryFindNearestRawProgressOnCurve(spline, mousePosition, out rawProgress, out bestDistance);
+        }
+
+        private static bool TryFindNearestRawProgressOnCurve(VFXSimpleSpline spline, Vector2 mousePosition, out float rawProgress, out float bestDistance)
+        {
             rawProgress = 0f;
+            bestDistance = float.MaxValue;
             if (spline == null || spline.GetActivePointCount() < 2)
                 return false;
 
             int samples = Mathf.Max(24, spline.resolution * 2);
-            float bestDistance = float.MaxValue;
             float bestProgress = 0f;
             Vector2 previousGui = HandleUtility.WorldToGUIPoint(spline.GetPoint(0f, false));
 
@@ -1773,68 +2489,6 @@ namespace VFXTimelineSplineTool.EditorTools
             return Vector2.Distance(point, projected);
         }
 
-        private static void HandleBezierPointContextMenu(VFXSimpleSpline spline, int index, Vector3 pointWorld, float pointSize)
-        {
-            Event e = Event.current;
-            if (!IsShiftRightMouseDown(e))
-                return;
-
-            Vector2 pointGui = HandleUtility.WorldToGUIPoint(pointWorld);
-            float radius = Mathf.Max(18f, pointSize * 90f);
-            if (Vector2.Distance(e.mousePosition, pointGui) > radius)
-                return;
-
-            Undo.RecordObject(spline, "Select Spline Point");
-            bool clickedSelectedMultiPoint = spline.selectedPointIndices != null &&
-                                             spline.selectedPointIndices.Count > 1 &&
-                                             spline.selectedPointIndices.Contains(index);
-            if (!clickedSelectedMultiPoint)
-                SetSinglePointSelection(spline, index);
-            EditorUtility.SetDirty(spline);
-
-            GenericMenu menu = new GenericMenu();
-            if (spline.selectedPointIndices != null && spline.selectedPointIndices.Count > 1)
-            {
-                AddAlignSelectedPointsMenu(menu, spline);
-                menu.AddSeparator("");
-            }
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.AutoSmooth, "自动平滑");
-            menu.AddItem(new GUIContent("自动平滑全部"), false, () =>
-            {
-                Undo.RecordObject(spline, "Auto Smooth All Bezier Points");
-                spline.AutoSmoothAllBezierPoints();
-                EditorUtility.SetDirty(spline);
-                SceneView.RepaintAll();
-            });
-            menu.AddSeparator("");
-            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Corner, "点类型/拐角");
-            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Smooth, "点类型/平滑");
-            AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Symmetric, "点类型/对称");
-            menu.AddSeparator("");
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Free, "手柄模式/自由手柄");
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Aligned, "手柄模式/对齐");
-            AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Mirrored, "手柄模式/镜像");
-            menu.AddSeparator("");
-            if (spline.GetActivePointCount() > 2)
-            {
-                menu.AddItem(new GUIContent("删除当前点"), false, () =>
-                {
-                    Undo.RecordObject(spline, "Delete Bezier Point");
-                    spline.RemovePointAt(index);
-                    EditorUtility.SetDirty(spline);
-                    SceneView.RepaintAll();
-                });
-            }
-            else
-            {
-                menu.AddDisabledItem(new GUIContent("删除当前点"));
-            }
-            e.Use();
-            suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
-            SceneView.RepaintAll();
-            menu.ShowAsContext();
-        }
-
         private static void ShowPointContextMenu(VFXSimpleSpline spline, int index)
         {
             if (spline == null || index < 0 || index >= spline.GetActivePointCount())
@@ -1849,35 +2503,53 @@ namespace VFXTimelineSplineTool.EditorTools
             EditorUtility.SetDirty(spline);
 
             GenericMenu menu = new GenericMenu();
-            if (spline.selectedPointIndices != null && spline.selectedPointIndices.Count > 1)
+            bool hasMultiSelection = spline.selectedPointIndices != null && spline.selectedPointIndices.Count > 1;
+            if (hasMultiSelection)
             {
                 AddAlignSelectedPointsMenu(menu, spline);
                 menu.AddSeparator("");
             }
 
+            AddPathModeMenuItems(menu, spline);
+            menu.AddSeparator("");
+
             if (spline.pathMode == VFXSplinePathMode.Bezier)
             {
-                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.AutoSmooth, "\u81ea\u52a8\u5e73\u6ed1");
-                menu.AddItem(new GUIContent("\u81ea\u52a8\u5e73\u6ed1\u5168\u90e8"), false, () =>
+                menu.AddItem(new GUIContent("重排控制点/按距离均匀重排"), false, () =>
+                {
+                    RedistributeBezierPointsByDistance(spline);
+                });
+                AddResamplePointCountMenuItems(menu, spline);
+                menu.AddSeparator("");
+
+                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.AutoSmooth, "Bezier/自动平滑");
+                menu.AddItem(new GUIContent("Bezier/自动平滑全部"), false, () =>
                 {
                     Undo.RecordObject(spline, "Auto Smooth All Bezier Points");
                     spline.AutoSmoothAllBezierPoints();
                     EditorUtility.SetDirty(spline);
                     SceneView.RepaintAll();
                 });
-                menu.AddSeparator("");
-                AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Corner, "\u70b9\u7c7b\u578b/\u62d0\u89d2");
-                AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Smooth, "\u70b9\u7c7b\u578b/\u5e73\u6ed1");
-                AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Symmetric, "\u70b9\u7c7b\u578b/\u5bf9\u79f0");
-                menu.AddSeparator("");
-                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Free, "\u624b\u67c4\u6a21\u5f0f/\u81ea\u7531\u624b\u67c4");
-                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Aligned, "\u624b\u67c4\u6a21\u5f0f/\u5bf9\u9f50");
-                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Mirrored, "\u624b\u67c4\u6a21\u5f0f/\u955c\u50cf");
+                menu.AddSeparator("Bezier 点类型/");
+                AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Corner, "Bezier 点类型/拐角");
+                AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Smooth, "Bezier 点类型/平滑");
+                AddBezierPointPresetMenuItem(menu, spline, index, VFXBezierPointPreset.Symmetric, "Bezier 点类型/对称");
+                menu.AddSeparator("Bezier 手柄模式/");
+                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Free, "Bezier 手柄模式/自由手柄");
+                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Aligned, "Bezier 手柄模式/对齐");
+                AddBezierModeMenuItem(menu, spline, index, VFXBezierHandleMode.Mirrored, "Bezier 手柄模式/镜像");
                 menu.AddSeparator("");
             }
             else
             {
-                menu.AddItem(new GUIContent("\u5728\u5f53\u524d\u70b9\u540e\u63d2\u5165\u70b9"), false, () =>
+                menu.AddItem(new GUIContent("重排控制点/按距离均匀重排"), false, () =>
+                {
+                    RedistributeCatmullRomPointsByDistance(spline);
+                });
+                AddResamplePointCountMenuItems(menu, spline);
+                menu.AddSeparator("");
+
+                menu.AddItem(new GUIContent("点操作/在当前点后插入点"), false, () =>
                 {
                     Undo.RecordObject(spline, "Insert Catmull-Rom Point After");
                     spline.InsertPoint(index + 1);
@@ -1888,7 +2560,7 @@ namespace VFXTimelineSplineTool.EditorTools
             }
 
             List<int> deleteIndices = GetContextDeleteIndices(spline, index);
-            string deleteLabel = deleteIndices.Count > 1 ? "\u5220\u9664\u9009\u4e2d\u7684\u70b9" : "\u5220\u9664\u5f53\u524d\u70b9";
+            string deleteLabel = deleteIndices.Count > 1 ? "点操作/删除选中的点" : "点操作/删除当前点";
             if (spline.GetActivePointCount() > 2 && deleteIndices.Count > 0)
             {
                 menu.AddItem(new GUIContent(deleteLabel), false, () =>
@@ -1907,6 +2579,141 @@ namespace VFXTimelineSplineTool.EditorTools
             suppressBezierToolbarUntil = EditorApplication.timeSinceStartup + 0.8;
             SceneView.RepaintAll();
             menu.ShowAsContext();
+        }
+        private static void AddPathModeMenuItems(GenericMenu menu, VFXSimpleSpline spline)
+        {
+            bool isBezier = spline != null && spline.pathMode == VFXSplinePathMode.Bezier;
+            if (isBezier)
+            {
+                menu.AddItem(new GUIContent("路径模式/Bezier"), true, () => { });
+                menu.AddItem(new GUIContent("路径模式/转换为 Catmull-Rom"), false, () =>
+                {
+                    ConvertSplinePathMode(spline, VFXSplinePathMode.CatmullRom, false);
+                });
+            }
+            else
+            {
+                menu.AddItem(new GUIContent("路径模式/Catmull-Rom"), true, () => { });
+                menu.AddItem(new GUIContent("路径模式/转换为 Bezier"), false, () =>
+                {
+                    ConvertSplinePathMode(spline, VFXSplinePathMode.Bezier, false);
+                });
+            }
+        }
+        private static void ConvertSplinePathMode(VFXSimpleSpline spline, VFXSplinePathMode mode, bool autoSmooth)
+        {
+            if (spline == null || (spline.pathMode == mode && !autoSmooth))
+                return;
+
+            Undo.RecordObject(spline, mode == VFXSplinePathMode.Bezier ? "Convert Catmull-Rom To Bezier" : "Convert Bezier To Catmull-Rom");
+            if (mode == VFXSplinePathMode.Bezier)
+            {
+                if (spline.pathMode != VFXSplinePathMode.Bezier)
+                    spline.ConvertCatmullRomToBezier();
+                spline.pathMode = VFXSplinePathMode.Bezier;
+                if (autoSmooth)
+                    spline.AutoSmoothAllBezierPoints();
+            }
+            else
+            {
+                spline.ConvertBezierToCatmullRom();
+                spline.pathMode = VFXSplinePathMode.CatmullRom;
+            }
+
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private static void RedistributeCatmullRomPointsByDistance(VFXSimpleSpline spline)
+        {
+            if (spline == null || spline.pathMode != VFXSplinePathMode.CatmullRom)
+                return;
+
+            int count = spline.GetActivePointCount();
+            ResampleCatmullRomPointsByDistance(spline, count, "Redistribute Catmull-Rom Points");
+        }
+
+        private static void RedistributeBezierPointsByDistance(VFXSimpleSpline spline)
+        {
+            if (spline == null || spline.pathMode != VFXSplinePathMode.Bezier)
+                return;
+
+            int count = spline.GetActivePointCount();
+            ResampleBezierPointsByDistance(spline, count, "Redistribute Bezier Points");
+        }
+
+        private static void AddResamplePointCountMenuItems(GenericMenu menu, VFXSimpleSpline spline)
+        {
+            AddResamplePointCountMenuItem(menu, spline, 8);
+            AddResamplePointCountMenuItem(menu, spline, 16);
+            AddResamplePointCountMenuItem(menu, spline, 32);
+        }
+
+        private static void AddResamplePointCountMenuItem(GenericMenu menu, VFXSimpleSpline spline, int pointCount)
+        {
+            bool current = spline != null && spline.GetActivePointCount() == pointCount;
+            menu.AddItem(new GUIContent("重排控制点/重采样为 " + pointCount + " 个点"), current, () =>
+            {
+                ResampleSplinePointsByDistance(spline, pointCount);
+            });
+        }
+
+        private static void ResampleSplinePointsByDistance(VFXSimpleSpline spline, int pointCount)
+        {
+            if (spline == null)
+                return;
+
+            if (spline.pathMode == VFXSplinePathMode.Bezier)
+                ResampleBezierPointsByDistance(spline, pointCount, "Resample Bezier Points");
+            else
+                ResampleCatmullRomPointsByDistance(spline, pointCount, "Resample Catmull-Rom Points");
+        }
+
+        private static void ResampleCatmullRomPointsByDistance(VFXSimpleSpline spline, int pointCount, string undoName)
+        {
+            if (spline == null || spline.pathMode != VFXSplinePathMode.CatmullRom)
+                return;
+
+            pointCount = Mathf.Clamp(pointCount, 2, 256);
+            List<Vector3> resampled = new List<Vector3>(pointCount);
+            for (int i = 0; i < pointCount; i++)
+            {
+                float progress = spline.loop ? i / (float)pointCount : i / (float)(pointCount - 1);
+                resampled.Add(spline.GetLocalPoint(progress, true));
+            }
+
+            Undo.RecordObject(spline, undoName);
+            spline.localPoints = resampled;
+            spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, pointCount - 1);
+            spline.selectedPointIndices = new List<int>() { spline.selectedPointIndex };
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private static void ResampleBezierPointsByDistance(VFXSimpleSpline spline, int pointCount, string undoName)
+        {
+            if (spline == null || spline.pathMode != VFXSplinePathMode.Bezier)
+                return;
+
+            pointCount = Mathf.Clamp(pointCount, 2, 256);
+            List<VFXBezierPoint> resampled = new List<VFXBezierPoint>(pointCount);
+            for (int i = 0; i < pointCount; i++)
+            {
+                float progress = spline.loop ? i / (float)pointCount : i / (float)(pointCount - 1);
+                VFXBezierPoint point = new VFXBezierPoint(spline.GetLocalPoint(progress, true));
+                point.handleMode = VFXBezierHandleMode.AutoSmooth;
+                resampled.Add(point);
+            }
+
+            Undo.RecordObject(spline, undoName);
+            spline.bezierPoints = resampled;
+            spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, pointCount - 1);
+            spline.selectedPointIndices = new List<int>() { spline.selectedPointIndex };
+            spline.AutoSmoothAllBezierPoints();
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
         }
 
         private static List<int> GetContextDeleteIndices(VFXSimpleSpline spline, int clickedIndex)
@@ -1960,7 +2767,9 @@ namespace VFXTimelineSplineTool.EditorTools
             menu.AddItem(new GUIContent(label), false, () =>
             {
                 Undo.RecordObject(spline, "Apply Bezier Point Preset");
-                spline.ApplyBezierPointPreset(index, preset);
+                List<int> targetIndices = GetBezierContextTargetIndices(spline, index);
+                for (int i = 0; i < targetIndices.Count; i++)
+                    spline.ApplyBezierPointPreset(targetIndices[i], preset);
                 EditorUtility.SetDirty(spline);
                 SceneView.RepaintAll();
             });
@@ -1975,6 +2784,32 @@ namespace VFXTimelineSplineTool.EditorTools
                            spline.bezierPoints[index].handleMode == mode;
 
             menu.AddItem(new GUIContent(label), current, () => ApplyBezierHandleMode(spline, index, mode));
+        }
+
+        private static List<int> GetBezierContextTargetIndices(VFXSimpleSpline spline, int clickedIndex)
+        {
+            List<int> indices = new List<int>();
+            if (spline == null || spline.bezierPoints == null)
+                return indices;
+
+            bool useSelection = spline.selectedPointIndices != null &&
+                                spline.selectedPointIndices.Count > 1 &&
+                                spline.selectedPointIndices.Contains(clickedIndex);
+            if (useSelection)
+            {
+                for (int i = 0; i < spline.selectedPointIndices.Count; i++)
+                {
+                    int index = spline.selectedPointIndices[i];
+                    if (index >= 0 && index < spline.bezierPoints.Count && !indices.Contains(index))
+                        indices.Add(index);
+                }
+            }
+            else if (clickedIndex >= 0 && clickedIndex < spline.bezierPoints.Count)
+            {
+                indices.Add(clickedIndex);
+            }
+
+            return indices;
         }
 
         private static void DrawBezierHandleModeToolbar(VFXSimpleSpline spline, int index, Vector3 pointWorld, float pointSize)
@@ -2031,7 +2866,9 @@ namespace VFXTimelineSplineTool.EditorTools
         private static void ApplyBezierHandleMode(VFXSimpleSpline spline, int index, VFXBezierHandleMode mode)
         {
             Undo.RecordObject(spline, "Change Bezier Handle Mode");
-            spline.SetBezierHandleMode(index, mode);
+            List<int> targetIndices = GetBezierContextTargetIndices(spline, index);
+            for (int i = 0; i < targetIndices.Count; i++)
+                spline.SetBezierHandleMode(targetIndices[i], mode);
             EditorUtility.SetDirty(spline);
             SceneView.RepaintAll();
         }
@@ -2047,10 +2884,13 @@ namespace VFXTimelineSplineTool.EditorTools
 
             Handles.color = new Color(0.35f, 0.85f, 1f, 0.85f);
 
-            if (index > 0)
+            bool canUseInTangent = index > 0 || spline.loop;
+            bool canUseOutTangent = index < pointCount - 1 || spline.loop;
+
+            if (canUseInTangent)
                 DrawBezierTangentHandle(spline, index, true, pointWorld, pointSize);
 
-            if (index < pointCount - 1)
+            if (canUseOutTangent)
                 DrawBezierTangentHandle(spline, index, false, pointWorld, pointSize);
         }
 

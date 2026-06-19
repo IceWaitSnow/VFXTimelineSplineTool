@@ -7,7 +7,7 @@ This note is for continuing development after a long Codex session. It records t
 - Point editing is handled in Scene View by `VFXSplinePointAPI`, `VFXSplinePointSceneOverlay`, and `VFXSplineSceneDrawer`.
 - The Scene status hint appears in the upper-left corner and shows the current edit mode, path mode, selection state, and shortcuts.
 - Core shortcut keys are configurable from:
-  - `Tools > VFX Timeline Spline > Shortcut Settings`
+  - Unity `Edit > Shortcuts...`, search `VFX Timeline Spline`
 - Default shortcuts:
   - `P`: toggle point edit mode
   - `A`: enter/exit append point mode
@@ -27,6 +27,11 @@ This note is for continuing development after a long Codex session. It records t
   - Near a point: opens that point's menu.
   - Near a curve: opens curve insertion menu.
 - `Shift + append shortcut` still performs a single add-at-mouse operation.
+- Shortcut defaults are registered through Unity `ShortcutManagement` attributes:
+  - `VFX Timeline Spline/切换点编辑模式`
+  - `VFX Timeline Spline/切换追加点模式`
+  - `VFX Timeline Spline/在鼠标位置追加点`
+  - `VFX Timeline Spline/打开点或曲线菜单`
 
 ## Bezier Editing
 
@@ -43,6 +48,12 @@ This note is for continuing development after a long Codex session. It records t
   - Delete current point / delete selected points
 - Bezier curve context menu supports inserting a Bezier point at the nearest curve position.
 - The inline Bezier toolbar shows only Free / Align / Mirror. Auto Smooth is kept in the context menu.
+
+## Loop Paths
+
+- `VFXSimpleSpline.loop` closes the final segment back to the first control point for evaluation, distance cache, tangents, and Scene drawing.
+- Closed shape presets enable `loop` instead of adding a duplicate final point.
+- Hard-corner presets such as Square, Rectangle, Triangle, Diamond, and Star set Bezier points to Corner when generated in Bezier mode.
 
 ## Catmull-Rom Editing
 
@@ -67,8 +78,7 @@ This note is for continuing development after a long Codex session. It records t
 
 - Avoid `GUILayout` inside Scene View overlays. Use fixed `Rect` with `GUI.Box`, `GUI.Label`, or `GUI.Button`.
 - Avoid broad `HandleUtility.AddDefaultControl`; it can break handle dragging. It is currently used only while append mode is active.
-- Shortcut settings are stored in `EditorPrefs` through `VFXSplinePointAPI`.
-- The old Unity `[Shortcut]` attribute for `P` was removed so custom shortcuts do not conflict with a hard-coded `P`.
+- Shortcut keys are managed by Unity Shortcut Manager through `[Shortcut]` attributes. Edit mode, active spline, pick size, and overlay preferences still use `EditorPrefs` in `VFXSplinePointAPI`.
 - Some older source comments or UI text may appear garbled in terminal output because of encoding display, but Unity may still show the original text correctly.
 
 ## Useful Files
@@ -79,17 +89,14 @@ This note is for continuing development after a long Codex session. It records t
 - `Editor/VFXSimpleSplineEditor.cs`
   - Inspector plus most Scene drawing and editing logic.
 - `Editor/VFXSplinePointAPI.cs`
-  - Edit mode state, shortcut settings, point operations.
+  - Edit mode state, overlay preferences, point operations.
 - `Editor/VFXSplinePointSceneOverlay.cs`
-  - Scene overlay hook and Tools menu entries.
-- `Editor/VFXSplineShortcutSettingsWindow.cs`
-  - Shortcut settings window.
+  - Scene overlay hook and Unity Shortcut Manager registrations.
 - `Editor/VFXSplinePointListWindow.cs`
   - Point list/editor window.
 
 ## Possible Next Improvements
 
-- Add a small "reset shortcuts" menu item directly under `Tools > VFX Timeline Spline`.
 - Add duplicate point / duplicate selected points.
 - Add resample path to N points.
 - Add remove-near-duplicate-points cleanup.

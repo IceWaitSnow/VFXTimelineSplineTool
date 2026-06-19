@@ -179,6 +179,8 @@ namespace VFXTimelineSplineTool
 
         [Header("路径设置")]
         public VFXSplinePathMode pathMode = VFXSplinePathMode.CatmullRom;
+        [Tooltip("开启后，路径最后一个控制点会直接连接回第一个控制点，Progress 1 会回到 Progress 0。")]
+        public bool loop = false;
         public Color pathColor = new Color(1f, 0.68f, 0.02f, 1f);
         public Color progressMarkColor = new Color(0.1f, 0.72f, 1f, 1f);
         [HideInInspector] public Color eventColor = new Color(1f, 0.25f, 0.1f, 1f); // v2.0 起隐藏：事件系统保留为旧工程兼容。
@@ -192,7 +194,7 @@ namespace VFXTimelineSplineTool
         public bool showAllPointHandles = false;
         [HideInInspector] public int selectedPointIndex = 0;
         [HideInInspector] public List<int> selectedPointIndices = new List<int>();
-        public bool showProgressMarks = true;
+        public bool showProgressMarks = false;
         [Range(1, 20)] public int progressMarkCount = 4;
         public bool progressMarksUseDistance = true;
         public bool showDirectionArrows = true;
@@ -309,8 +311,8 @@ namespace VFXTimelineSplineTool
         {
             progress = Mathf.Clamp01(progress);
             const float delta = 0.001f;
-            float a = Mathf.Clamp01(progress - delta);
-            float b = Mathf.Clamp01(progress + delta);
+            float a = loop ? Mathf.Repeat(progress - delta, 1f) : Mathf.Clamp01(progress - delta);
+            float b = loop ? Mathf.Repeat(progress + delta, 1f) : Mathf.Clamp01(progress + delta);
             Vector3 p0 = GetPoint(a, distanceBased);
             Vector3 p1 = GetPoint(b, distanceBased);
             Vector3 tangent = p1 - p0;
@@ -369,12 +371,34 @@ namespace VFXTimelineSplineTool
         public Vector3 GetPointByRawProgress(float progress)
         {
             progress = Mathf.Clamp01(progress);
+            if (loop && progress >= 1f)
+                progress = 0f;
+
             if (pathMode == VFXSplinePathMode.Bezier)
                 return GetBezierPointByRawProgress(progress);
 
             int count = localPoints != null ? localPoints.Count : 0;
             if (count == 0) return transform.position;
             if (count == 1) return transform.TransformPoint(GetEffectiveLocalPoint(0));
+
+            if (loop)
+            {
+                float loopScaled = progress * count;
+                int loopP1 = Mathf.FloorToInt(loopScaled);
+                if (loopP1 >= count) loopP1 = 0;
+                int loopP2 = (loopP1 + 1) % count;
+                int loopP0 = (loopP1 - 1 + count) % count;
+                int loopP3 = (loopP2 + 1) % count;
+                float loopT = loopScaled - Mathf.Floor(loopScaled);
+
+                Vector3 loopLocal = CatmullRom(
+                    GetEffectiveLocalPoint(loopP0),
+                    GetEffectiveLocalPoint(loopP1),
+                    GetEffectiveLocalPoint(loopP2),
+                    GetEffectiveLocalPoint(loopP3),
+                    loopT);
+                return transform.TransformPoint(loopLocal);
+            }
 
             float scaled = progress * (count - 1);
             int p1 = Mathf.FloorToInt(scaled);
@@ -396,10 +420,29 @@ namespace VFXTimelineSplineTool
         private Vector3 GetBezierPointByRawProgress(float progress)
         {
             EnsureBezierPoints();
+            if (loop && progress >= 1f)
+                progress = 0f;
 
             int count = bezierPoints != null ? bezierPoints.Count : 0;
             if (count == 0) return transform.position;
             if (count == 1) return transform.TransformPoint(GetEffectiveBezierPosition(0));
+
+            if (loop)
+            {
+                float loopScaled = progress * count;
+                int loopIndex = Mathf.FloorToInt(loopScaled);
+                if (loopIndex >= count) loopIndex = 0;
+                int nextIndex = (loopIndex + 1) % count;
+                float loopT = loopScaled - Mathf.Floor(loopScaled);
+
+                VFXBezierPoint point = bezierPoints[loopIndex];
+                VFXBezierPoint nextPoint = bezierPoints[nextIndex];
+                Vector3 loopP0 = GetEffectiveBezierPosition(loopIndex);
+                Vector3 loopP1 = loopP0 + (point != null ? point.outTangent : Vector3.zero);
+                Vector3 loopP3 = GetEffectiveBezierPosition(nextIndex);
+                Vector3 loopP2 = loopP3 + (nextPoint != null ? nextPoint.inTangent : Vector3.zero);
+                return transform.TransformPoint(CubicBezier(loopP0, loopP1, loopP2, loopP3, loopT));
+            }
 
             float scaled = progress * (count - 1);
             int index = Mathf.FloorToInt(scaled);
@@ -557,6 +600,7 @@ namespace VFXTimelineSplineTool
                 new Vector3(4f, 1f, 0f),
                 new Vector3(6f, 0f, 0f)
             };
+            loop = false;
             ConvertCatmullRomToBezier();
             selectedPointIndex = 0;
             selectedPointIndices = new List<int>() { 0 };
@@ -648,19 +692,28 @@ namespace VFXTimelineSplineTool
                 return -1;
 
             progress = Mathf.Clamp01(progress);
-            float scaled = progress * (bezierPoints.Count - 1);
+            if (loop && progress >= 1f)
+                progress = 0f;
+
+            int segmentCount = loop ? bezierPoints.Count : bezierPoints.Count - 1;
+            float scaled = progress * segmentCount;
             int index = Mathf.FloorToInt(scaled);
-            if (index >= bezierPoints.Count - 1) index = bezierPoints.Count - 2;
+            if (loop)
+            {
+                if (index >= bezierPoints.Count) index = 0;
+            }
+            else if (index >= bezierPoints.Count - 1) index = bezierPoints.Count - 2;
             float t = Mathf.Clamp01(scaled - index);
 
             VFXBezierPoint leftPoint = bezierPoints[index];
-            VFXBezierPoint rightPoint = bezierPoints[index + 1];
+            int rightIndex = loop ? (index + 1) % bezierPoints.Count : index + 1;
+            VFXBezierPoint rightPoint = bezierPoints[rightIndex];
             if (leftPoint == null || rightPoint == null)
                 return -1;
 
             Vector3 p0 = GetEffectiveBezierPosition(index);
             Vector3 p1 = p0 + leftPoint.outTangent;
-            Vector3 p3 = GetEffectiveBezierPosition(index + 1);
+            Vector3 p3 = GetEffectiveBezierPosition(rightIndex);
             Vector3 p2 = p3 + rightPoint.inTangent;
 
             Vector3 a = Vector3.Lerp(p0, p1, t);
@@ -698,9 +751,17 @@ namespace VFXTimelineSplineTool
                 return -1;
 
             progress = Mathf.Clamp01(progress);
-            float scaled = progress * (localPoints.Count - 1);
+            if (loop && progress >= 1f)
+                progress = 0f;
+
+            int segmentCount = loop ? localPoints.Count : localPoints.Count - 1;
+            float scaled = progress * segmentCount;
             int index = Mathf.FloorToInt(scaled);
-            if (index >= localPoints.Count - 1) index = localPoints.Count - 2;
+            if (loop)
+            {
+                if (index >= localPoints.Count) index = 0;
+            }
+            else if (index >= localPoints.Count - 1) index = localPoints.Count - 2;
 
             Vector3 worldPosition = GetPointByRawProgress(progress);
             Vector3 localPosition = transform.InverseTransformPoint(worldPosition);
@@ -996,7 +1057,15 @@ namespace VFXTimelineSplineTool
             Vector3 position = GetEffectiveBezierPosition(index);
             Vector3 tangent;
 
-            if (index <= 0)
+            if (loop)
+            {
+                int prevIndex = (index - 1 + count) % count;
+                int nextIndex = (index + 1) % count;
+                Vector3 prev = bezierPoints[prevIndex] != null ? GetEffectiveBezierPosition(prevIndex) : position - Vector3.right;
+                Vector3 next = bezierPoints[nextIndex] != null ? GetEffectiveBezierPosition(nextIndex) : position + Vector3.right;
+                tangent = (next - prev) / 6f;
+            }
+            else if (index <= 0)
             {
                 Vector3 next = bezierPoints[1] != null ? GetEffectiveBezierPosition(1) : position + Vector3.right;
                 tangent = (next - position) / 3f;
@@ -1104,7 +1173,16 @@ namespace VFXTimelineSplineTool
 
             Vector3 position = GetEffectiveBezierPosition(index);
             Vector3 tangent;
-            if (index <= 0)
+            if (loop)
+            {
+                int count = bezierPoints.Count;
+                int prevIndex = (index - 1 + count) % count;
+                int nextIndex = (index + 1) % count;
+                Vector3 prev = bezierPoints[prevIndex] != null ? GetEffectiveBezierPosition(prevIndex) : position - Vector3.right;
+                Vector3 next = bezierPoints[nextIndex] != null ? GetEffectiveBezierPosition(nextIndex) : position + Vector3.right;
+                tangent = (next - prev) / 6f;
+            }
+            else if (index <= 0)
             {
                 Vector3 next = bezierPoints.Count > 1 && bezierPoints[1] != null ? GetEffectiveBezierPosition(1) : position + Vector3.right;
                 tangent = (next - position) / 3f;
@@ -1130,7 +1208,16 @@ namespace VFXTimelineSplineTool
 
             if (bezierPoints != null && bezierPoints.Count > 0)
             {
-                if (index <= 0)
+                if (loop)
+                {
+                    int count = bezierPoints.Count;
+                    int prevIndex = (index - 1 + count) % count;
+                    int nextIndex = index % count;
+                    Vector3 prev = bezierPoints[prevIndex] != null ? GetEffectiveBezierPosition(prevIndex) : position - Vector3.right;
+                    Vector3 next = bezierPoints[nextIndex] != null ? GetEffectiveBezierPosition(nextIndex) : position + Vector3.right;
+                    tangent = (next - prev) / 6f;
+                }
+                else if (index <= 0)
                 {
                     Vector3 next = bezierPoints[0] != null ? bezierPoints[0].position : position + Vector3.right;
                     tangent = (next - position) / 3f;
@@ -1160,10 +1247,13 @@ namespace VFXTimelineSplineTool
             if (source == null || source.Count < 2)
                 return Vector3.right * 0.5f;
 
-            int prevIndex = Mathf.Clamp(index - 1, 0, source.Count - 1);
-            int nextIndex = Mathf.Clamp(index + 1, 0, source.Count - 1);
+            int prevIndex = loop ? (index - 1 + source.Count) % source.Count : Mathf.Clamp(index - 1, 0, source.Count - 1);
+            int nextIndex = loop ? (index + 1) % source.Count : Mathf.Clamp(index + 1, 0, source.Count - 1);
             Vector3 prev = source[prevIndex];
             Vector3 next = source[nextIndex];
+
+            if (loop)
+                return (next - prev) / 6f;
 
             if (index <= 0)
                 return (next - position) / 3f;
