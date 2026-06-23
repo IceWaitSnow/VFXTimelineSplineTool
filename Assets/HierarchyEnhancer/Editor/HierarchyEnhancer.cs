@@ -1775,6 +1775,9 @@ namespace UnityTool.HierarchyEnhancer
         {
             private Vector2 scrollPosition;
             private string searchText = string.Empty;
+            private bool showGlobalActions;
+            private bool showSelectedActions = true;
+            private bool showMarkList = true;
 
             public static void Open()
             {
@@ -1792,10 +1795,24 @@ namespace UnityTool.HierarchyEnhancer
                     return;
                 }
 
-                DrawGlobalActions(settings);
-                DrawSelectedObjectActions(settings);
+                showGlobalActions = EditorGUILayout.Foldout(showGlobalActions, "全局显示设置", true);
+                if (showGlobalActions)
+                {
+                    DrawGlobalActions(settings);
+                }
+
+                showSelectedActions = EditorGUILayout.Foldout(showSelectedActions, "当前选中对象", true);
+                if (showSelectedActions)
+                {
+                    DrawSelectedObjectActions(settings);
+                }
+
                 DrawToolbar(settings);
-                DrawRuleList(settings);
+                showMarkList = EditorGUILayout.Foldout(showMarkList, "标记列表", true);
+                if (showMarkList)
+                {
+                    DrawRuleList(settings);
+                }
             }
 
             private void DrawEmptyState()
@@ -1812,8 +1829,6 @@ namespace UnityTool.HierarchyEnhancer
             {
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                 {
-                    EditorGUILayout.LabelField("全局显示设置", EditorStyles.boldLabel);
-
                     using (new EditorGUILayout.HorizontalScope())
                     {
                         DrawPreferenceToggle("启用", EnabledKey, IsEnabled);
@@ -1859,7 +1874,7 @@ namespace UnityTool.HierarchyEnhancer
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                 {
                     var selectedCount = Selection.gameObjects.Length;
-                    EditorGUILayout.LabelField("当前选中对象", selectedCount > 0 ? selectedCount.ToString() : "无", EditorStyles.boldLabel);
+                    EditorGUILayout.LabelField("选中数量", selectedCount > 0 ? selectedCount.ToString() : "无", EditorStyles.boldLabel);
 
                     using (new EditorGUI.DisabledScope(selectedCount == 0))
                     {
@@ -1913,6 +1928,8 @@ namespace UnityTool.HierarchyEnhancer
                             }
                         }
 
+                        DrawInlineTemplates(settings);
+
                         using (new EditorGUILayout.HorizontalScope())
                         {
                             if (GUILayout.Button("红色"))
@@ -1942,6 +1959,44 @@ namespace UnityTool.HierarchyEnhancer
                         }
                     }
                 }
+            }
+
+            private void DrawInlineTemplates(HierarchyEnhancerSettings settings)
+            {
+                if (settings.styleTemplates.Count == 0)
+                {
+                    return;
+                }
+
+                EditorGUILayout.LabelField("模板", EditorStyles.miniBoldLabel);
+
+                const int buttonsPerRow = 4;
+                var visibleIndex = 0;
+                EditorGUILayout.BeginHorizontal();
+                for (var i = 0; i < settings.styleTemplates.Count; i++)
+                {
+                    var template = settings.styleTemplates[i];
+                    if (template == null)
+                    {
+                        continue;
+                    }
+
+                    if (visibleIndex > 0 && visibleIndex % buttonsPerRow == 0)
+                    {
+                        EditorGUILayout.EndHorizontal();
+                        EditorGUILayout.BeginHorizontal();
+                    }
+
+                    var buttonLabel = string.IsNullOrEmpty(template.name) ? "未命名模板" : template.name;
+                    if (GUILayout.Button(buttonLabel))
+                    {
+                        settings.ApplyTemplate(Selection.gameObjects, template);
+                    }
+
+                    visibleIndex++;
+                }
+
+                EditorGUILayout.EndHorizontal();
             }
 
             private void DrawToolbar(HierarchyEnhancerSettings settings)

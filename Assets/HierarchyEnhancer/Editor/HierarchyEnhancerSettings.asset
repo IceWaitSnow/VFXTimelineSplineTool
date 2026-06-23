@@ -25,7 +25,28 @@ MonoBehaviour:
   - enabled: 1
     componentTypeName: VFXSimpleSpline
     label: VFX
-  objectLabelRules: []
+  objectLabelRules:
+  - objectId: GlobalObjectId_V1-2-40ce871fa67a37d4da4b6d352aeb10ee-310824474-0
+    objectName: VFX Simple Spline Path_02
+    label: "\u8DEF\u5F84"
+    useTextColor: 1
+    textColor: {r: 0.45, g: 0.9, b: 0.48, a: 1}
+    useRowColor: 1
+    rowColor: {r: 0.15, g: 0.65, b: 0.25, a: 0.24}
+  - objectId: GlobalObjectId_V1-2-40ce871fa67a37d4da4b6d352aeb10ee-1011855322-0
+    objectName: Capsule
+    label: 
+    useTextColor: 1
+    textColor: {r: 0, g: 0.4560101, b: 1, a: 1}
+    useRowColor: 1
+    rowColor: {r: 1, g: 0.35, b: 0.2, a: 0.25}
+  - objectId: GlobalObjectId_V1-2-40ce871fa67a37d4da4b6d352aeb10ee-1031355521-0
+    objectName: VFX Spline Anchor_000
+    label: 
+    useTextColor: 1
+    textColor: {r: 0, g: 0.4560101, b: 1, a: 1}
+    useRowColor: 1
+    rowColor: {r: 1, g: 0.35, b: 0.2, a: 0.25}
   styleTemplates:
   - name: "\u7EA2\u8272\u7C92\u5B50"
     label: "\u7EA2\u8272\u7C92\u5B50"
