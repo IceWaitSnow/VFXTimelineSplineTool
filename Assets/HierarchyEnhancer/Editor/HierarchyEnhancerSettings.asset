@@ -1,0 +1,53 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 0}
+  m_Name: HierarchyEnhancerSettings
+  m_EditorClassIdentifier: Assembly-CSharp-Editor:UnityTool.HierarchyEnhancer:HierarchyEnhancer/HierarchyEnhancerSettings
+  badgeRules:
+  - enabled: 1
+    componentTypeName: Camera
+    label: Cam
+  - enabled: 1
+    componentTypeName: Light
+    label: Lgt
+  - enabled: 1
+    componentTypeName: Animator
+    label: Anim
+  - enabled: 1
+    componentTypeName: VFXSimpleSpline
+    label: VFX
+  objectLabelRules: []
+  styleTemplates:
+  - name: "\u7EA2\u8272\u7C92\u5B50"
+    label: "\u7EA2\u8272\u7C92\u5B50"
+    useTextColor: 1
+    textColor: {r: 1, g: 0.38, b: 0.32, a: 1}
+    useRowColor: 1
+    rowColor: {r: 1, g: 0.22, b: 0.15, a: 0.26}
+  - name: "\u8DEF\u5F84\u8282\u70B9"
+    label: "\u8DEF\u5F84"
+    useTextColor: 1
+    textColor: {r: 0.45, g: 0.72, b: 1, a: 1}
+    useRowColor: 1
+    rowColor: {r: 0.15, g: 0.42, b: 1, a: 0.22}
+  - name: "\u4E34\u65F6\u5BF9\u8C61"
+    label: "\u4E34\u65F6"
+    useTextColor: 1
+    textColor: {r: 1, g: 0.78, b: 0.22, a: 1}
+    useRowColor: 1
+    rowColor: {r: 1, g: 0.64, b: 0.12, a: 0.22}
+  - name: "\u5F85\u6574\u7406"
+    label: "\u5F85\u6574\u7406"
+    useTextColor: 1
+    textColor: {r: 0.82, g: 0.58, b: 1, a: 1}
+    useRowColor: 1
+    rowColor: {r: 0.52, g: 0.25, b: 0.85, a: 0.22}
