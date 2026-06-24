@@ -47,6 +47,7 @@ namespace UnityTool.HierarchyEnhancer
         private const float BadgeGap = 3f;
         private const float ObjectIconSize = 16f;
         private const float IndentWidth = 14f;
+        private const float MarkManagerRowHeight = 58f;
 
         private static readonly Dictionary<Type, GUIContent> TypeNameCache = new Dictionary<Type, GUIContent>();
         private static readonly Dictionary<int, Texture> ObjectIconCache = new Dictionary<int, Texture>();
@@ -55,6 +56,7 @@ namespace UnityTool.HierarchyEnhancer
         private static GUIStyle badgeStyle;
         private static GUIStyle nameStyle;
         private static Texture2D whiteTexture;
+        private static int markListVersion;
 
         static HierarchyEnhancer()
         {
@@ -471,6 +473,7 @@ namespace UnityTool.HierarchyEnhancer
 
         private static void MarkSettingsChanged(HierarchyEnhancerSettings settings)
         {
+            markListVersion++;
             SetCachedSettings(settings);
             EditorUtility.SetDirty(settings);
             AssetDatabase.SaveAssets();
@@ -479,6 +482,7 @@ namespace UnityTool.HierarchyEnhancer
 
         private static void ClearObjectCaches()
         {
+            markListVersion++;
             ObjectIconCache.Clear();
             HierarchyEnhancerSettings.ClearObjectIdCache();
         }
@@ -914,6 +918,7 @@ namespace UnityTool.HierarchyEnhancer
             public string objectId;
             public string objectName;
             public string label;
+            public bool bookmarked;
             public bool useTextColor;
             public Color textColor = Color.white;
             public bool useRowColor;
@@ -964,6 +969,7 @@ namespace UnityTool.HierarchyEnhancer
             private bool lookupCacheReady;
 
             private static readonly Dictionary<int, string> ObjectIdCache = new Dictionary<int, string>();
+            private static readonly Dictionary<string, GameObject> ResolvedObjectCache = new Dictionary<string, GameObject>();
 
             public static HierarchyEnhancerSettings Get()
             {
@@ -1031,6 +1037,7 @@ namespace UnityTool.HierarchyEnhancer
             public static void ClearObjectIdCache()
             {
                 ObjectIdCache.Clear();
+                ResolvedObjectCache.Clear();
             }
 
             public void RebuildLookupCache()
@@ -1116,6 +1123,11 @@ namespace UnityTool.HierarchyEnhancer
                 return style.useTextColor || style.useRowColor;
             }
 
+            public static string GetObjectIdentifier(GameObject gameObject)
+            {
+                return GetObjectId(gameObject);
+            }
+
             public void SetObjectLabel(GameObject[] gameObjects, string label)
             {
                 if (gameObjects == null || gameObjects.Length == 0)
@@ -1151,6 +1163,37 @@ namespace UnityTool.HierarchyEnhancer
                 MarkSettingsChanged(this);
             }
 
+            public void SetBookmark(GameObject[] gameObjects, bool bookmarked)
+            {
+                if (gameObjects == null || gameObjects.Length == 0)
+                {
+                    return;
+                }
+
+                Undo.RecordObject(this, bookmarked ? "Add Hierarchy Bookmarks" : "Remove Hierarchy Bookmarks");
+
+                for (var i = 0; i < gameObjects.Length; i++)
+                {
+                    SetBookmark(gameObjects[i], bookmarked);
+                }
+
+                CleanupEmptyRules();
+                MarkSettingsChanged(this);
+            }
+
+            public void SetBookmark(ObjectLabelRule rule, bool bookmarked)
+            {
+                if (rule == null)
+                {
+                    return;
+                }
+
+                Undo.RecordObject(this, bookmarked ? "Add Hierarchy Bookmark" : "Remove Hierarchy Bookmark");
+                rule.bookmarked = bookmarked;
+                CleanupEmptyRules();
+                MarkSettingsChanged(this);
+            }
+
             public void ApplyCopiedStyle(GameObject[] gameObjects, CopiedObjectStyle style)
             {
                 if (gameObjects == null || gameObjects.Length == 0 || style == null)
@@ -1169,6 +1212,23 @@ namespace UnityTool.HierarchyEnhancer
                 MarkSettingsChanged(this);
             }
 
+            public void ApplyStyleToChildren(GameObject parent, CopiedObjectStyle style, bool recursive)
+            {
+                if (parent == null || style == null)
+                {
+                    return;
+                }
+
+                var children = new List<GameObject>();
+                CollectChildren(parent.transform, recursive, children);
+                if (children.Count == 0)
+                {
+                    return;
+                }
+
+                ApplyCopiedStyle(children.ToArray(), style);
+            }
+
             public void ApplyTemplate(GameObject[] gameObjects, StyleTemplate template)
             {
                 if (gameObjects == null || gameObjects.Length == 0 || template == null)
@@ -1184,6 +1244,32 @@ namespace UnityTool.HierarchyEnhancer
                 }
 
                 CleanupEmptyRules();
+                MarkSettingsChanged(this);
+            }
+
+            public void AddTemplateFromStyle(string templateName, CopiedObjectStyle style)
+            {
+                if (style == null)
+                {
+                    return;
+                }
+
+                Undo.RecordObject(this, "Add Hierarchy Style Template");
+                var template = new StyleTemplate();
+                ApplyStyleToTemplate(template, templateName, style);
+                styleTemplates.Add(template);
+                MarkSettingsChanged(this);
+            }
+
+            public void OverwriteTemplateFromStyle(int index, CopiedObjectStyle style)
+            {
+                if (style == null || index < 0 || index >= styleTemplates.Count || styleTemplates[index] == null)
+                {
+                    return;
+                }
+
+                Undo.RecordObject(this, "Overwrite Hierarchy Style Template");
+                ApplyStyleToTemplate(styleTemplates[index], styleTemplates[index].name, style);
                 MarkSettingsChanged(this);
             }
 
@@ -1294,13 +1380,21 @@ namespace UnityTool.HierarchyEnhancer
                     return null;
                 }
 
+                GameObject cachedObject;
+                if (ResolvedObjectCache.TryGetValue(rule.objectId, out cachedObject))
+                {
+                    return cachedObject;
+                }
+
                 GlobalObjectId globalObjectId;
                 if (!GlobalObjectId.TryParse(rule.objectId, out globalObjectId))
                 {
                     return null;
                 }
 
-                return GlobalObjectId.GlobalObjectIdentifierToObjectSlow(globalObjectId) as GameObject;
+                cachedObject = GlobalObjectId.GlobalObjectIdentifierToObjectSlow(globalObjectId) as GameObject;
+                ResolvedObjectCache[rule.objectId] = cachedObject;
+                return cachedObject;
             }
 
             private void SetObjectLabel(GameObject gameObject, string label)
@@ -1339,6 +1433,19 @@ namespace UnityTool.HierarchyEnhancer
                 rule.rowColor = rowColor;
             }
 
+            private void SetBookmark(GameObject gameObject, bool bookmarked)
+            {
+                var objectId = GetObjectId(gameObject);
+                if (string.IsNullOrEmpty(objectId))
+                {
+                    return;
+                }
+
+                var rule = GetOrCreateObjectRule(gameObject, objectId);
+                rule.objectName = gameObject.name;
+                rule.bookmarked = bookmarked;
+            }
+
             private void ApplyCopiedStyle(GameObject gameObject, CopiedObjectStyle style)
             {
                 var objectId = GetObjectId(gameObject);
@@ -1356,6 +1463,20 @@ namespace UnityTool.HierarchyEnhancer
                 rule.rowColor = style.rowColor;
             }
 
+            private static void CollectChildren(Transform parent, bool recursive, List<GameObject> children)
+            {
+                for (var i = 0; i < parent.childCount; i++)
+                {
+                    var child = parent.GetChild(i);
+                    children.Add(child.gameObject);
+
+                    if (recursive)
+                    {
+                        CollectChildren(child, true, children);
+                    }
+                }
+            }
+
             private void ApplyTemplate(GameObject gameObject, StyleTemplate template)
             {
                 var objectId = GetObjectId(gameObject);
@@ -1371,6 +1492,16 @@ namespace UnityTool.HierarchyEnhancer
                 rule.textColor = template.textColor;
                 rule.useRowColor = template.useRowColor;
                 rule.rowColor = template.rowColor;
+            }
+
+            private static void ApplyStyleToTemplate(StyleTemplate template, string templateName, CopiedObjectStyle style)
+            {
+                template.name = string.IsNullOrWhiteSpace(templateName) ? "未命名模板" : templateName.Trim();
+                template.label = string.IsNullOrWhiteSpace(style.label) ? string.Empty : style.label.Trim();
+                template.useTextColor = style.useTextColor;
+                template.textColor = style.textColor;
+                template.useRowColor = style.useRowColor;
+                template.rowColor = style.rowColor;
             }
 
             private ObjectLabelRule GetOrCreateObjectRule(GameObject gameObject, string objectId)
@@ -1406,7 +1537,7 @@ namespace UnityTool.HierarchyEnhancer
             {
                 objectLabelRules.RemoveAll(rule =>
                     rule == null ||
-                    (string.IsNullOrEmpty(rule.label) && !rule.useTextColor && !rule.useRowColor));
+                    (string.IsNullOrEmpty(rule.label) && !rule.bookmarked && !rule.useTextColor && !rule.useRowColor));
                 lookupCacheReady = false;
             }
 
@@ -1708,7 +1839,7 @@ namespace UnityTool.HierarchyEnhancer
 
                 if (settings.styleTemplates.Count == 0)
                 {
-                    EditorGUILayout.HelpBox("暂无模板。可以在层级增强设置资产里添加模板。", MessageType.Info);
+                    EditorGUILayout.HelpBox("暂无模板。可以在层级标记管理器里新增模板。", MessageType.Info);
                     return;
                 }
 
@@ -1725,12 +1856,6 @@ namespace UnityTool.HierarchyEnhancer
                 }
 
                 EditorGUILayout.EndScrollView();
-
-                if (GUILayout.Button("编辑模板"))
-                {
-                    Selection.activeObject = settings;
-                    EditorGUIUtility.PingObject(settings);
-                }
             }
 
             private void DrawTemplateButton(HierarchyEnhancerSettings settings, StyleTemplate template)
@@ -1778,6 +1903,27 @@ namespace UnityTool.HierarchyEnhancer
             private bool showGlobalActions;
             private bool showSelectedActions = true;
             private bool showMarkList = true;
+            private string selectedLabelDraft = string.Empty;
+            private string syncedSelectionKey = string.Empty;
+            private MarkFilter markFilter = MarkFilter.All;
+            private MarkSortMode sortMode = MarkSortMode.Default;
+            private int currentPage;
+            private int pageSize = 50;
+            private int selectedTemplateIndex;
+            private string templateDraftName = string.Empty;
+            private string focusedObjectId = string.Empty;
+            private double focusedObjectUntil;
+            private readonly Dictionary<string, bool> groupFoldouts = new Dictionary<string, bool>();
+            private readonly List<ObjectLabelRule> visibleRuleCache = new List<ObjectLabelRule>();
+            private HierarchyEnhancerSettings cachedVisibleRuleSettings;
+            private string cachedVisibleRuleSearch = string.Empty;
+            private MarkFilter cachedVisibleRuleFilter = MarkFilter.All;
+            private MarkSortMode cachedVisibleRuleSort = MarkSortMode.Default;
+            private int cachedVisibleRuleCount = -1;
+            private int cachedVisibleRuleVersion = -1;
+            private static readonly int[] PageSizeValues = { 25, 50, 100, 200 };
+            private static readonly string[] PageSizeLabels = { "25", "50", "100", "200" };
+            private static readonly string[] SortModeLabels = { "默认", "名称", "标签", "颜色", "书签优先", "失效优先" };
 
             public static void Open()
             {
@@ -1878,6 +2024,21 @@ namespace UnityTool.HierarchyEnhancer
 
                     using (new EditorGUI.DisabledScope(selectedCount == 0))
                     {
+                        DrawQuickLabelEditor(settings);
+
+                        using (new EditorGUILayout.HorizontalScope())
+                        {
+                            if (GUILayout.Button("加入书签"))
+                            {
+                                settings.SetBookmark(Selection.gameObjects, true);
+                            }
+
+                            if (GUILayout.Button("取消书签"))
+                            {
+                                settings.SetBookmark(Selection.gameObjects, false);
+                            }
+                        }
+
                         using (new EditorGUILayout.HorizontalScope())
                         {
                             if (GUILayout.Button("设置标签"))
@@ -1920,14 +2081,10 @@ namespace UnityTool.HierarchyEnhancer
                             {
                                 TemplatePickerWindow.Open(Selection.gameObjects);
                             }
-
-                            if (GUILayout.Button("编辑模板"))
-                            {
-                                Selection.activeObject = settings;
-                                EditorGUIUtility.PingObject(settings);
-                            }
                         }
 
+                        DrawApplyToChildrenActions(settings);
+                        DrawTemplateManager(settings);
                         DrawInlineTemplates(settings);
 
                         using (new EditorGUILayout.HorizontalScope())
@@ -1959,6 +2116,159 @@ namespace UnityTool.HierarchyEnhancer
                         }
                     }
                 }
+            }
+
+            private void DrawApplyToChildrenActions(HierarchyEnhancerSettings settings)
+            {
+                var active = Selection.activeGameObject;
+                var canApply = Selection.gameObjects.Length == 1 && active != null && active.transform.childCount > 0;
+
+                using (new EditorGUI.DisabledScope(!canApply))
+                {
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        if (GUILayout.Button("应用到直接子级"))
+                        {
+                            GetSettingsStyle(active, out var style);
+                            settings.ApplyStyleToChildren(active, style, false);
+                        }
+
+                        if (GUILayout.Button("应用到全部子级"))
+                        {
+                            GetSettingsStyle(active, out var style);
+                            settings.ApplyStyleToChildren(active, style, true);
+                        }
+                    }
+                }
+            }
+
+            private void DrawQuickLabelEditor(HierarchyEnhancerSettings settings)
+            {
+                SyncSelectedLabelDraft(settings);
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    selectedLabelDraft = EditorGUILayout.TextField("快速标签", selectedLabelDraft);
+
+                    if (GUILayout.Button("应用标签", GUILayout.Width(72f)))
+                    {
+                        settings.SetObjectLabel(Selection.gameObjects, selectedLabelDraft);
+                    }
+                }
+            }
+
+            private void SyncSelectedLabelDraft(HierarchyEnhancerSettings settings)
+            {
+                var selectionKey = GetSelectionKey();
+                if (selectionKey == syncedSelectionKey)
+                {
+                    return;
+                }
+
+                syncedSelectionKey = selectionKey;
+                var selected = Selection.gameObjects;
+                if (selected.Length == 1 && settings.TryGetObjectLabel(selected[0], out var label))
+                {
+                    selectedLabelDraft = label;
+                }
+                else
+                {
+                    selectedLabelDraft = string.Empty;
+                }
+            }
+
+            private static string GetSelectionKey()
+            {
+                var selected = Selection.gameObjects;
+                if (selected.Length == 0)
+                {
+                    return string.Empty;
+                }
+
+                var ids = new int[selected.Length];
+                for (var i = 0; i < selected.Length; i++)
+                {
+                    ids[i] = selected[i].GetInstanceID();
+                }
+
+                Array.Sort(ids);
+                return string.Join(",", Array.ConvertAll(ids, id => id.ToString()));
+            }
+
+            private void DrawTemplateManager(HierarchyEnhancerSettings settings)
+            {
+                EditorGUILayout.LabelField("模板管理", EditorStyles.miniBoldLabel);
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    templateDraftName = EditorGUILayout.TextField("模板名", templateDraftName);
+
+                    using (new EditorGUI.DisabledScope(Selection.activeGameObject == null))
+                    {
+                        if (GUILayout.Button("新增", GUILayout.Width(54f)))
+                        {
+                            GetSettingsStyle(Selection.activeGameObject, out var style);
+                            settings.AddTemplateFromStyle(GetTemplateNameForCreate(), style);
+                            selectedTemplateIndex = settings.styleTemplates.Count - 1;
+                            templateDraftName = string.Empty;
+                        }
+                    }
+                }
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    var hasTemplates = settings.styleTemplates.Count > 0;
+                    selectedTemplateIndex = Mathf.Clamp(selectedTemplateIndex, 0, Mathf.Max(0, settings.styleTemplates.Count - 1));
+
+                    if (!hasTemplates)
+                    {
+                        EditorGUILayout.LabelField("现有模板", "暂无模板");
+                        return;
+                    }
+
+                    using (new EditorGUI.DisabledScope(!hasTemplates))
+                    {
+                        selectedTemplateIndex = EditorGUILayout.Popup("现有模板", selectedTemplateIndex, GetTemplateNames(settings));
+
+                        if (GUILayout.Button("覆盖", GUILayout.Width(54f)))
+                        {
+                            GetSettingsStyle(Selection.activeGameObject, out var style);
+                            settings.OverwriteTemplateFromStyle(selectedTemplateIndex, style);
+                        }
+                    }
+                }
+            }
+
+            private string GetTemplateNameForCreate()
+            {
+                if (!string.IsNullOrWhiteSpace(templateDraftName))
+                {
+                    return templateDraftName;
+                }
+
+                return Selection.activeGameObject != null ? Selection.activeGameObject.name + " 样式" : "未命名模板";
+            }
+
+            private static string[] GetTemplateNames(HierarchyEnhancerSettings settings)
+            {
+                var names = new string[settings.styleTemplates.Count];
+                for (var i = 0; i < settings.styleTemplates.Count; i++)
+                {
+                    names[i] = GetTemplateName(settings, i);
+                }
+
+                return names;
+            }
+
+            private static string GetTemplateName(HierarchyEnhancerSettings settings, int index)
+            {
+                if (index < 0 || index >= settings.styleTemplates.Count || settings.styleTemplates[index] == null)
+                {
+                    return "未命名模板";
+                }
+
+                var template = settings.styleTemplates[index];
+                return string.IsNullOrWhiteSpace(template.name) ? "未命名模板" : template.name;
             }
 
             private void DrawInlineTemplates(HierarchyEnhancerSettings settings)
@@ -2004,79 +2314,446 @@ namespace UnityTool.HierarchyEnhancer
                 using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar))
                 {
                     GUILayout.Label("搜索", GUILayout.Width(32f));
-                    searchText = GUILayout.TextField(searchText, EditorStyles.toolbarSearchField);
+                    var nextSearchText = GUILayout.TextField(searchText, EditorStyles.toolbarSearchField);
+                    if (!string.Equals(searchText, nextSearchText, StringComparison.Ordinal))
+                    {
+                        searchText = nextSearchText;
+                        ResetListPage();
+                    }
 
                     if (GUILayout.Button("清空", EditorStyles.toolbarButton, GUILayout.Width(48f)))
                     {
                         searchText = string.Empty;
+                        ResetListPage();
                         GUI.FocusControl(null);
+                    }
+
+                    using (new EditorGUI.DisabledScope(Selection.activeGameObject == null))
+                    {
+                        if (GUILayout.Button("定位选中", EditorStyles.toolbarButton, GUILayout.Width(72f)))
+                        {
+                            FocusSelectedRule(settings);
+                        }
                     }
 
                     if (GUILayout.Button("清筛选标签", EditorStyles.toolbarButton, GUILayout.Width(82f)))
                     {
-                        settings.ClearLabels(GetVisibleRules(settings));
-                        Repaint();
+                        var visibleRules = GetVisibleRules(settings);
+                        if (ConfirmBatchAction("清筛选标签", "将清除当前筛选结果中 " + visibleRules.Count + " 个对象的标签。"))
+                        {
+                            settings.ClearLabels(visibleRules);
+                            Repaint();
+                        }
                     }
 
                     if (GUILayout.Button("清筛选颜色", EditorStyles.toolbarButton, GUILayout.Width(82f)))
                     {
-                        settings.ClearColors(GetVisibleRules(settings));
-                        Repaint();
+                        var visibleRules = GetVisibleRules(settings);
+                        if (ConfirmBatchAction("清筛选颜色", "将清除当前筛选结果中 " + visibleRules.Count + " 个对象的颜色样式。"))
+                        {
+                            settings.ClearColors(visibleRules);
+                            Repaint();
+                        }
                     }
 
                     if (GUILayout.Button("清筛选全部", EditorStyles.toolbarButton, GUILayout.Width(82f)))
                     {
-                        settings.RemoveObjectRules(GetVisibleRules(settings));
-                        Repaint();
+                        var visibleRules = GetVisibleRules(settings);
+                        if (ConfirmBatchAction("清筛选全部", "将移除当前筛选结果中 " + visibleRules.Count + " 条标记记录。"))
+                        {
+                            settings.RemoveObjectRules(visibleRules);
+                            Repaint();
+                        }
                     }
 
                     if (GUILayout.Button("清理失效", EditorStyles.toolbarButton, GUILayout.Width(72f)))
                     {
-                        settings.RemoveInvalidObjectRules();
-                        Repaint();
+                        if (ConfirmBatchAction("清理失效", "将移除所有找不到对象的失效标记。"))
+                        {
+                            settings.RemoveInvalidObjectRules();
+                            Repaint();
+                        }
                     }
                 }
+
+                using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar))
+                {
+                    DrawFilterButton("全部", MarkFilter.All);
+                    DrawFilterButton("书签", MarkFilter.Bookmarked);
+                    DrawFilterButton("有标签", MarkFilter.Labeled);
+                    DrawFilterButton("有颜色", MarkFilter.Colored);
+                    DrawFilterButton("失效", MarkFilter.Missing);
+
+                    GUILayout.FlexibleSpace();
+                    GUILayout.Label("排序", GUILayout.Width(32f));
+                    EditorGUI.BeginChangeCheck();
+                    sortMode = (MarkSortMode)EditorGUILayout.Popup((int)sortMode, SortModeLabels, GUILayout.Width(88f));
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        ResetListPage();
+                    }
+                }
+            }
+
+            private static bool ConfirmBatchAction(string title, string message)
+            {
+                return EditorUtility.DisplayDialog(title, message, "确认", "取消");
+            }
+
+            private void DrawFilterButton(string label, MarkFilter filter)
+            {
+                var oldColor = GUI.color;
+                if (markFilter == filter)
+                {
+                    GUI.color = new Color(0.72f, 0.86f, 1f, 1f);
+                }
+
+                if (GUILayout.Button(label, EditorStyles.toolbarButton))
+                {
+                    markFilter = filter;
+                    ResetListPage();
+                }
+
+                GUI.color = oldColor;
+            }
+
+            private void FocusSelectedRule(HierarchyEnhancerSettings settings)
+            {
+                var selected = Selection.activeGameObject;
+                var objectId = HierarchyEnhancerSettings.GetObjectIdentifier(selected);
+                if (string.IsNullOrEmpty(objectId))
+                {
+                    return;
+                }
+
+                var rules = GetVisibleRules(settings);
+                var index = FindRuleIndex(rules, objectId);
+                if (index < 0)
+                {
+                    searchText = string.Empty;
+                    markFilter = MarkFilter.All;
+                    ResetVisibleRuleCache();
+                    rules = GetVisibleRules(settings);
+                    index = FindRuleIndex(rules, objectId);
+                }
+
+                if (index < 0)
+                {
+                    EditorUtility.DisplayDialog("定位选中", "当前选中对象还没有标记记录。", "知道了");
+                    return;
+                }
+
+                var rule = rules[index];
+                groupFoldouts[ShouldGroupByLabel() ? GetGroupName(rule) : "排序结果"] = true;
+                currentPage = index / pageSize;
+                scrollPosition = new Vector2(0f, GetFocusedRuleScrollY(rules, index));
+                focusedObjectId = objectId;
+                focusedObjectUntil = EditorApplication.timeSinceStartup + 2.5d;
+                Repaint();
+            }
+
+            private float GetFocusedRuleScrollY(List<ObjectLabelRule> rules, int ruleIndex)
+            {
+                var pageStart = currentPage * pageSize;
+                var pageIndex = ruleIndex - pageStart;
+                var groupHeadersBeforeTarget = ShouldGroupByLabel()
+                    ? CountGroupHeadersBeforeTarget(rules, pageStart, ruleIndex)
+                    : 1;
+
+                return Mathf.Max(0f, (pageIndex - 1) * MarkManagerRowHeight + groupHeadersBeforeTarget * EditorGUIUtility.singleLineHeight);
+            }
+
+            private static int CountGroupHeadersBeforeTarget(List<ObjectLabelRule> rules, int pageStart, int targetIndex)
+            {
+                var groupNames = new HashSet<string>();
+                for (var i = pageStart; i <= targetIndex && i < rules.Count; i++)
+                {
+                    var rule = rules[i];
+                    if (rule != null)
+                    {
+                        groupNames.Add(GetGroupName(rule));
+                    }
+                }
+
+                return groupNames.Count;
+            }
+
+            private static int FindRuleIndex(List<ObjectLabelRule> rules, string objectId)
+            {
+                for (var i = 0; i < rules.Count; i++)
+                {
+                    var rule = rules[i];
+                    if (rule != null && string.Equals(rule.objectId, objectId, StringComparison.Ordinal))
+                    {
+                        return i;
+                    }
+                }
+
+                return -1;
+            }
+
+            private void ResetVisibleRuleCache()
+            {
+                cachedVisibleRuleSettings = null;
+                cachedVisibleRuleCount = -1;
             }
 
             private List<ObjectLabelRule> GetVisibleRules(HierarchyEnhancerSettings settings)
             {
-                var result = new List<ObjectLabelRule>();
+                if (IsVisibleRuleCacheValid(settings))
+                {
+                    return visibleRuleCache;
+                }
+
+                visibleRuleCache.Clear();
                 var rules = settings.objectLabelRules;
                 for (var i = 0; i < rules.Count; i++)
                 {
                     var rule = rules[i];
-                    if (rule != null && MatchesSearch(rule))
+                    if (rule != null && MatchesFilter(rule) && MatchesSearch(rule))
                     {
-                        result.Add(rule);
+                        visibleRuleCache.Add(rule);
                     }
                 }
 
-                return result;
+                SortVisibleRules(visibleRuleCache);
+                cachedVisibleRuleSettings = settings;
+                cachedVisibleRuleSearch = searchText;
+                cachedVisibleRuleFilter = markFilter;
+                cachedVisibleRuleSort = sortMode;
+                cachedVisibleRuleCount = rules.Count;
+                cachedVisibleRuleVersion = markListVersion;
+                return visibleRuleCache;
+            }
+
+            private bool IsVisibleRuleCacheValid(HierarchyEnhancerSettings settings)
+            {
+                return cachedVisibleRuleSettings == settings &&
+                    cachedVisibleRuleCount == settings.objectLabelRules.Count &&
+                    cachedVisibleRuleFilter == markFilter &&
+                    cachedVisibleRuleSort == sortMode &&
+                    cachedVisibleRuleVersion == markListVersion &&
+                    string.Equals(cachedVisibleRuleSearch, searchText, StringComparison.Ordinal);
+            }
+
+            private void SortVisibleRules(List<ObjectLabelRule> rules)
+            {
+                if (sortMode == MarkSortMode.Default)
+                {
+                    return;
+                }
+
+                rules.Sort(CompareRules);
+            }
+
+            private int CompareRules(ObjectLabelRule a, ObjectLabelRule b)
+            {
+                switch (sortMode)
+                {
+                    case MarkSortMode.Name:
+                        return CompareText(a.objectName, b.objectName);
+                    case MarkSortMode.Label:
+                        return CompareText(a.label, b.label);
+                    case MarkSortMode.Color:
+                        return CompareText(GetColorSortKey(a), GetColorSortKey(b));
+                    case MarkSortMode.BookmarkFirst:
+                        return CompareBoolDescending(a.bookmarked, b.bookmarked, a, b);
+                    case MarkSortMode.MissingFirst:
+                        return CompareBoolDescending(IsMissing(a), IsMissing(b), a, b);
+                    default:
+                        return 0;
+                }
+            }
+
+            private static int CompareBoolDescending(bool a, bool b, ObjectLabelRule ruleA, ObjectLabelRule ruleB)
+            {
+                var result = b.CompareTo(a);
+                return result != 0 ? result : CompareText(ruleA.objectName, ruleB.objectName);
+            }
+
+            private static int CompareText(string a, string b)
+            {
+                return string.Compare(a ?? string.Empty, b ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            }
+
+            private static string GetColorSortKey(ObjectLabelRule rule)
+            {
+                if (rule == null || (!rule.useTextColor && !rule.useRowColor))
+                {
+                    return string.Empty;
+                }
+
+                var color = rule.useRowColor ? rule.rowColor : rule.textColor;
+                return color.r.ToString("F3") + "," + color.g.ToString("F3") + "," + color.b.ToString("F3") + "," + color.a.ToString("F3");
+            }
+
+            private static bool IsMissing(ObjectLabelRule rule)
+            {
+                return HierarchyEnhancerSettings.ResolveObject(rule) == null;
             }
 
             private void DrawRuleList(HierarchyEnhancerSettings settings)
             {
-                var rules = settings.objectLabelRules;
+                var rules = GetVisibleRules(settings);
                 if (rules.Count == 0)
                 {
-                    EditorGUILayout.HelpBox("暂无标记。", MessageType.Info);
+                    EditorGUILayout.HelpBox("暂无匹配标记。", MessageType.Info);
                     return;
                 }
 
-                scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
+                DrawPaginationBar(rules.Count);
+                var pageRules = GetPageRules(rules);
 
-                for (var i = 0; i < rules.Count; i++)
+                scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
+                var groups = ShouldGroupByLabel() ? BuildGroups(pageRules) : BuildSingleGroup(pageRules);
+
+                foreach (var group in groups)
                 {
-                    var rule = rules[i];
-                    if (rule == null || !MatchesSearch(rule))
+                    if (!groupFoldouts.ContainsKey(group.name))
+                    {
+                        groupFoldouts[group.name] = true;
+                    }
+
+                    groupFoldouts[group.name] = EditorGUILayout.Foldout(groupFoldouts[group.name], group.name + " (" + group.rules.Count + ")", true);
+                    if (!groupFoldouts[group.name])
                     {
                         continue;
                     }
 
-                    DrawRuleRow(settings, rule);
+                    for (var i = 0; i < group.rules.Count; i++)
+                    {
+                        DrawRuleRow(settings, group.rules[i]);
+                    }
                 }
 
                 EditorGUILayout.EndScrollView();
+            }
+
+            private void DrawPaginationBar(int totalCount)
+            {
+                var pageCount = Mathf.Max(1, Mathf.CeilToInt(totalCount / (float)pageSize));
+                currentPage = Mathf.Clamp(currentPage, 0, pageCount - 1);
+
+                using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar))
+                {
+                    GUILayout.Label("显示", GUILayout.Width(28f));
+
+                    EditorGUI.BeginChangeCheck();
+                    pageSize = EditorGUILayout.IntPopup(pageSize, PageSizeLabels, PageSizeValues, GUILayout.Width(56f));
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        ResetListPage();
+                        pageCount = Mathf.Max(1, Mathf.CeilToInt(totalCount / (float)pageSize));
+                    }
+
+                    GUILayout.Label("条/页", GUILayout.Width(42f));
+                    GUILayout.FlexibleSpace();
+
+                    using (new EditorGUI.DisabledScope(currentPage == 0))
+                    {
+                        if (GUILayout.Button("上一页", EditorStyles.toolbarButton, GUILayout.Width(54f)))
+                        {
+                            currentPage--;
+                            scrollPosition = Vector2.zero;
+                        }
+                    }
+
+                    GUILayout.Label((currentPage + 1) + " / " + pageCount + "  共 " + totalCount + " 条", EditorStyles.miniLabel, GUILayout.Width(110f));
+
+                    using (new EditorGUI.DisabledScope(currentPage >= pageCount - 1))
+                    {
+                        if (GUILayout.Button("下一页", EditorStyles.toolbarButton, GUILayout.Width(54f)))
+                        {
+                            currentPage++;
+                            scrollPosition = Vector2.zero;
+                        }
+                    }
+                }
+            }
+
+            private void ResetListPage()
+            {
+                currentPage = 0;
+                scrollPosition = Vector2.zero;
+            }
+
+            private List<ObjectLabelRule> GetPageRules(List<ObjectLabelRule> rules)
+            {
+                var pageRules = new List<ObjectLabelRule>();
+                var startIndex = currentPage * pageSize;
+                var endIndex = Mathf.Min(startIndex + pageSize, rules.Count);
+
+                for (var i = startIndex; i < endIndex; i++)
+                {
+                    pageRules.Add(rules[i]);
+                }
+
+                return pageRules;
+            }
+
+            private bool MatchesFilter(ObjectLabelRule rule)
+            {
+                switch (markFilter)
+                {
+                    case MarkFilter.Bookmarked:
+                        return rule.bookmarked;
+                    case MarkFilter.Labeled:
+                        return !string.IsNullOrEmpty(rule.label);
+                    case MarkFilter.Colored:
+                        return rule.useTextColor || rule.useRowColor;
+                    case MarkFilter.Missing:
+                        return HierarchyEnhancerSettings.ResolveObject(rule) == null;
+                    default:
+                        return true;
+                }
+            }
+
+            private static List<RuleGroup> BuildGroups(List<ObjectLabelRule> rules)
+            {
+                var groups = new List<RuleGroup>();
+                for (var i = 0; i < rules.Count; i++)
+                {
+                    var rule = rules[i];
+                    var groupName = GetGroupName(rule);
+                    var group = groups.Find(item => item.name == groupName);
+                    if (group == null)
+                    {
+                        group = new RuleGroup(groupName);
+                        groups.Add(group);
+                    }
+
+                    group.rules.Add(rule);
+                }
+
+                groups.Sort((a, b) => string.Compare(a.name, b.name, StringComparison.Ordinal));
+                return groups;
+            }
+
+            private static string GetGroupName(ObjectLabelRule rule)
+            {
+                if (!string.IsNullOrEmpty(rule.label))
+                {
+                    return rule.label;
+                }
+
+                if (rule.bookmarked)
+                {
+                    return "书签";
+                }
+
+                return "无标签";
+            }
+
+            private bool ShouldGroupByLabel()
+            {
+                return sortMode == MarkSortMode.Default || sortMode == MarkSortMode.Label;
+            }
+
+            private static List<RuleGroup> BuildSingleGroup(List<ObjectLabelRule> rules)
+            {
+                var group = new RuleGroup("排序结果");
+                group.rules.AddRange(rules);
+                return new List<RuleGroup> { group };
             }
 
             private bool MatchesSearch(ObjectLabelRule rule)
@@ -2087,7 +2764,9 @@ namespace UnityTool.HierarchyEnhancer
                 }
 
                 var search = searchText.Trim();
-                return Contains(rule.objectName, search) || Contains(rule.label, search);
+                return Contains(rule.objectName, search) ||
+                    Contains(rule.label, search) ||
+                    (rule.bookmarked && Contains("书签", search));
             }
 
             private static bool Contains(string value, string search)
@@ -2100,16 +2779,25 @@ namespace UnityTool.HierarchyEnhancer
             {
                 var gameObject = HierarchyEnhancerSettings.ResolveObject(rule);
                 var isMissing = gameObject == null;
+                var isFocused = IsFocusedRule(rule);
 
                 using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
                 {
-                    DrawColorPreview(rule);
+                    if (DrawColorPreview(rule) && !isMissing)
+                    {
+                        ObjectColorWindow.Open(new[] { gameObject });
+                    }
 
                     using (new EditorGUILayout.VerticalScope())
                     {
                         var objectName = isMissing ? rule.objectName + " (失效)" : gameObject.name;
+                        if (isFocused)
+                        {
+                            objectName += "  已定位";
+                        }
+
                         EditorGUILayout.LabelField(objectName, EditorStyles.boldLabel);
-                        EditorGUILayout.LabelField(string.IsNullOrEmpty(rule.label) ? "无标签" : rule.label, EditorStyles.miniLabel);
+                        EditorGUILayout.LabelField(GetRuleSubtitle(rule), EditorStyles.miniLabel);
                     }
 
                     using (new EditorGUI.DisabledScope(isMissing))
@@ -2119,35 +2807,129 @@ namespace UnityTool.HierarchyEnhancer
                             Selection.activeGameObject = gameObject;
                             EditorGUIUtility.PingObject(gameObject);
                         }
-
-                        if (GUILayout.Button("同标签", GUILayout.Width(58f)))
-                        {
-                            SelectMatchingRules(settings, rule, MatchMode.Label);
-                        }
-
-                        if (GUILayout.Button("同样式", GUILayout.Width(58f)))
-                        {
-                            SelectMatchingRules(settings, rule, MatchMode.Style);
-                        }
                     }
 
-                    if (GUILayout.Button("清标签", GUILayout.Width(58f)))
+                    if (GUILayout.Button("操作", GUILayout.Width(48f)))
                     {
-                        settings.ClearLabel(rule);
-                        Repaint();
+                        ShowRuleActionMenu(settings, rule, isMissing);
                     }
+                }
 
-                    if (GUILayout.Button("清颜色", GUILayout.Width(58f)))
+                if (isFocused)
+                {
+                    DrawFocusedRowHighlight(GUILayoutUtility.GetLastRect());
+                    Repaint();
+                }
+            }
+
+            private bool IsFocusedRule(ObjectLabelRule rule)
+            {
+                return rule != null &&
+                    EditorApplication.timeSinceStartup <= focusedObjectUntil &&
+                    string.Equals(rule.objectId, focusedObjectId, StringComparison.Ordinal);
+            }
+
+            private static void DrawFocusedRowHighlight(Rect rect)
+            {
+                var line = EditorGUIUtility.isProSkin
+                    ? new Color(0.5f, 0.78f, 1f, 0.85f)
+                    : new Color(0.05f, 0.25f, 0.85f, 0.75f);
+
+                EditorGUI.DrawRect(new Rect(rect.x, rect.y, 4f, rect.height), line);
+                EditorGUI.DrawRect(new Rect(rect.x, rect.y, rect.width, 2f), line);
+                EditorGUI.DrawRect(new Rect(rect.x, rect.yMax - 2f, rect.width, 2f), line);
+            }
+
+            private void ShowRuleActionMenu(HierarchyEnhancerSettings settings, ObjectLabelRule rule, bool isMissing)
+            {
+                var menu = new GenericMenu();
+
+                if (isMissing)
+                {
+                    menu.AddDisabledItem(new GUIContent("选中同标签"));
+                    menu.AddDisabledItem(new GUIContent("选中同颜色"));
+                    menu.AddDisabledItem(new GUIContent("选中同样式"));
+                }
+                else
+                {
+                    menu.AddItem(new GUIContent("选中同标签"), false, () => SelectMatchingRules(settings, rule, MatchMode.Label));
+                    menu.AddItem(new GUIContent("选中同颜色"), false, () => SelectMatchingRules(settings, rule, MatchMode.Color));
+                    menu.AddItem(new GUIContent("选中同样式"), false, () => SelectMatchingRules(settings, rule, MatchMode.Style));
+                }
+
+                menu.AddSeparator(string.Empty);
+
+                if (rule.bookmarked)
+                {
+                    menu.AddItem(new GUIContent("取消书签"), false, () =>
                     {
-                        settings.ClearColor(rule);
+                        settings.SetBookmark(rule, false);
                         Repaint();
-                    }
+                    });
+                }
+                else
+                {
+                    menu.AddItem(new GUIContent("加入书签"), false, () =>
+                    {
+                        settings.SetBookmark(rule, true);
+                        Repaint();
+                    });
+                }
+
+                menu.AddItem(new GUIContent("清标签"), false, () =>
+                {
+                    settings.ClearLabel(rule);
+                    Repaint();
+                });
+                menu.AddItem(new GUIContent("清颜色"), false, () =>
+                {
+                    settings.ClearColor(rule);
+                    Repaint();
+                });
+
+                menu.ShowAsContext();
+            }
+
+            private static string GetRuleSubtitle(ObjectLabelRule rule)
+            {
+                var label = string.IsNullOrEmpty(rule.label) ? "无标签" : rule.label;
+                return rule.bookmarked ? label + " / 书签" : label;
+            }
+
+            private enum MarkFilter
+            {
+                All,
+                Bookmarked,
+                Labeled,
+                Colored,
+                Missing
+            }
+
+            private enum MarkSortMode
+            {
+                Default,
+                Name,
+                Label,
+                Color,
+                BookmarkFirst,
+                MissingFirst
+            }
+
+            private sealed class RuleGroup
+            {
+                public readonly string name;
+                public readonly List<ObjectLabelRule> rules = new List<ObjectLabelRule>();
+
+                public RuleGroup(string name)
+                {
+                    this.name = name;
                 }
             }
 
             private enum MatchMode
             {
                 Label,
+                Color,
                 Style
             }
 
@@ -2178,16 +2960,22 @@ namespace UnityTool.HierarchyEnhancer
 
             private static bool IsMatch(ObjectLabelRule sourceRule, ObjectLabelRule rule, MatchMode mode)
             {
-                if (!StringEquals(sourceRule.label, rule.label))
-                {
-                    return false;
-                }
-
                 if (mode == MatchMode.Label)
                 {
-                    return true;
+                    return StringEquals(sourceRule.label, rule.label);
                 }
 
+                if (mode == MatchMode.Color)
+                {
+                    return ColorStyleEquals(sourceRule, rule);
+                }
+
+                return StringEquals(sourceRule.label, rule.label) &&
+                    ColorStyleEquals(sourceRule, rule);
+            }
+
+            private static bool ColorStyleEquals(ObjectLabelRule sourceRule, ObjectLabelRule rule)
+            {
                 return sourceRule.useTextColor == rule.useTextColor &&
                     ColorEquals(sourceRule.textColor, rule.textColor) &&
                     sourceRule.useRowColor == rule.useRowColor &&
@@ -2207,9 +2995,10 @@ namespace UnityTool.HierarchyEnhancer
                     Mathf.Approximately(a.a, b.a);
             }
 
-            private static void DrawColorPreview(ObjectLabelRule rule)
+            private static bool DrawColorPreview(ObjectLabelRule rule)
             {
                 var rect = GUILayoutUtility.GetRect(34f, 32f, GUILayout.Width(34f), GUILayout.Height(32f));
+                EditorGUIUtility.AddCursorRect(rect, MouseCursor.Link);
                 var oldColor = GUI.color;
 
                 GUI.color = rule.useRowColor ? rule.rowColor : new Color(0f, 0f, 0f, 0.12f);
@@ -2222,6 +3011,19 @@ namespace UnityTool.HierarchyEnhancer
                 }
 
                 GUI.color = oldColor;
+                DrawPreviewBorder(rect);
+                return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+            }
+
+            private static void DrawPreviewBorder(Rect rect)
+            {
+                var color = EditorGUIUtility.isProSkin
+                    ? new Color(1f, 1f, 1f, 0.18f)
+                    : new Color(0f, 0f, 0f, 0.18f);
+                EditorGUI.DrawRect(new Rect(rect.x, rect.y, rect.width, 1f), color);
+                EditorGUI.DrawRect(new Rect(rect.x, rect.yMax - 1f, rect.width, 1f), color);
+                EditorGUI.DrawRect(new Rect(rect.x, rect.y, 1f, rect.height), color);
+                EditorGUI.DrawRect(new Rect(rect.xMax - 1f, rect.y, 1f, rect.height), color);
             }
         }
     }
