@@ -60,10 +60,17 @@ namespace VFXTimelineSplineTool.EditorTools
 
             EditorGUILayout.Space(4);
             EditorGUILayout.LabelField("旋转", EditorStyles.boldLabel);
-            DrawProperty("rotationMode", "旋转模式");
+            VFXSplineRotationModeGUI.Draw(serializedObject, "旋转模式");
             DrawProperty("forwardAxis", "前向轴");
             DrawProperty("rotationOffsetEuler", "旋转偏移 Euler");
             DrawProperty("fallbackForward", "备用前向");
+            DrawProperty("followSourceRotation", "跟随 Source 旋转");
+            DrawProperty("followSourceScale", "跟随 Source 缩放");
+            using (new EditorGUI.DisabledScope(anchor.sourceAnimator == null))
+            {
+                if (GUILayout.Button("从 Source Animator 同步旋转设置"))
+                    SyncRotationSettingsFromSource(anchor);
+            }
 
             EditorGUILayout.Space(4);
             EditorGUILayout.LabelField("编辑器预览", EditorStyles.boldLabel);
@@ -159,6 +166,8 @@ namespace VFXTimelineSplineTool.EditorTools
                 case "forwardAxis": return "指定 Anchor 哪根本地轴作为前进方向。";
                 case "rotationOffsetEuler": return "在路径方向旋转之后额外叠加的 Euler 角偏移。";
                 case "fallbackForward": return "路径切线过短时使用的备用前向方向。";
+                case "followSourceRotation": return "开启后 Anchor 直接使用 Source Animator 物体当前世界旋转，不再按本 Anchor 的路径切线旋转。";
+                case "followSourceScale": return "开启后 Anchor 使用 Source Animator 物体当前 Local Scale。";
                 case "previewInEditMode": return "编辑模式下实时预览 Anchor 在路径上的位置。";
                 case "applyOnValidate": return "Inspector 参数变化时立即应用 Anchor。";
                 case "showSceneLabel": return "在 Scene 视图中显示 Anchor 名称和进度标签。";
@@ -183,6 +192,23 @@ namespace VFXTimelineSplineTool.EditorTools
             Undo.RecordObject(anchor, "Set Anchor Offset");
             Undo.RecordObject(anchor.transform, "Apply Anchor Offset");
             anchor.progressOffset = value;
+            anchor.ApplyAnchor();
+            EditorUtility.SetDirty(anchor);
+            SceneView.RepaintAll();
+        }
+
+        private static void SyncRotationSettingsFromSource(VFXSplineAnchor anchor)
+        {
+            if (anchor == null || anchor.sourceAnimator == null)
+                return;
+
+            Undo.RecordObject(anchor, "Sync Anchor Rotation Settings");
+            Undo.RecordObject(anchor.transform, "Apply Anchor Rotation Settings");
+            anchor.rotationMode = anchor.sourceAnimator.rotationMode;
+            anchor.forwardAxis = anchor.sourceAnimator.forwardAxis;
+            anchor.rotationOffsetEuler = anchor.sourceAnimator.rotationOffsetEuler;
+            anchor.fallbackForward = anchor.sourceAnimator.fallbackForward;
+            anchor.followSourceRotation = false;
             anchor.ApplyAnchor();
             EditorUtility.SetDirty(anchor);
             SceneView.RepaintAll();
@@ -559,7 +585,8 @@ namespace VFXTimelineSplineTool.EditorTools
                 Vector3 tangent = activeSpline.GetTangent(p, anchor.useDistanceBasedProgress);
                 if (tangent.sqrMagnitude < 0.000001f)
                     tangent = anchor.fallbackForward.sqrMagnitude > 0.000001f ? anchor.fallbackForward.normalized : Vector3.forward;
-                worldRotation = anchor.BuildRotation(tangent) * Quaternion.Euler(anchor.rotationOffsetEuler);
+                Vector3 normal = activeSpline.GetNormal(p, anchor.useDistanceBasedProgress);
+                worldRotation = anchor.BuildRotation(tangent, normal) * Quaternion.Euler(anchor.rotationOffsetEuler);
             }
 
             AnchorBakeSample sample = new AnchorBakeSample();
@@ -1480,6 +1507,9 @@ namespace VFXTimelineSplineTool.EditorTools
             Vector3 pos = activeSpline.GetPoint(p, anchor.useDistanceBasedProgress);
             Vector3 tangent = activeSpline.GetTangent(p, anchor.useDistanceBasedProgress);
             float size = HandleUtility.GetHandleSize(pos) * anchor.gizmoSize;
+
+            if (!anchor.showSceneLabel && !editable)
+                return;
 
             Handles.color = anchor.labelColor;
             Handles.SphereHandleCap(0, pos, Quaternion.identity, size, EventType.Repaint);

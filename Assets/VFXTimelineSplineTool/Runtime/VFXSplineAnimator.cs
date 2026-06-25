@@ -5,9 +5,11 @@ namespace VFXTimelineSplineTool
 {
     public enum VFXSplineRotationMode
     {
-        None,
-        Full3D,
-        YawOnly
+        None = 0,
+        Full3D = 1,
+        YawOnly = 2,
+        PlanarStable = 3,
+        PlanarForward = 4
     }
 
     public enum VFXSplineForwardAxis
@@ -264,7 +266,8 @@ namespace VFXTimelineSplineTool
                 if (tangent.sqrMagnitude < 0.000001f)
                     tangent = fallbackForward.sqrMagnitude > 0.000001f ? fallbackForward.normalized : Vector3.forward;
 
-                Quaternion rot = BuildRotation(tangent);
+                Vector3 normal = spline.GetNormal(p, useDistanceBasedProgress);
+                Quaternion rot = BuildRotation(tangent, normal);
                 transform.rotation = rot * Quaternion.Euler(rotationOffsetEuler);
             }
 
@@ -336,17 +339,45 @@ namespace VFXTimelineSplineTool
 
         public Quaternion BuildRotation(Vector3 tangent)
         {
+            return BuildRotation(tangent, Vector3.up);
+        }
+
+        public Quaternion BuildRotation(Vector3 tangent, Vector3 up)
+        {
             Vector3 forward = tangent.normalized;
 
-            if (rotationMode == VFXSplineRotationMode.YawOnly)
-            {
-                forward.y = 0f;
-                if (forward.sqrMagnitude < 0.000001f)
-                    forward = transform.forward;
-            }
+            if (IsPlanarRotationMode(rotationMode))
+                forward = ResolvePlanarForward(tangent, fallbackForward, rotationMode == VFXSplineRotationMode.PlanarStable);
 
-            Quaternion look = Quaternion.LookRotation(forward.normalized, Vector3.up);
+            if (up.sqrMagnitude < 0.000001f)
+                up = Vector3.up;
+
+            Quaternion look = Quaternion.LookRotation(forward.normalized, up.normalized);
             return look * Quaternion.Inverse(AxisToRotation(forwardAxis));
+        }
+
+        public static bool IsPlanarRotationMode(VFXSplineRotationMode mode)
+        {
+            return mode == VFXSplineRotationMode.YawOnly
+                || mode == VFXSplineRotationMode.PlanarStable
+                || mode == VFXSplineRotationMode.PlanarForward;
+        }
+
+        public static Vector3 ResolvePlanarForward(Vector3 tangent, Vector3 referenceForward, bool preventFlip)
+        {
+            Vector3 forward = tangent;
+            forward.y = 0f;
+
+            Vector3 reference = referenceForward;
+            reference.y = 0f;
+
+            if (forward.sqrMagnitude < 0.000001f)
+                forward = reference.sqrMagnitude > 0.000001f ? reference : Vector3.forward;
+
+            if (preventFlip && reference.sqrMagnitude > 0.000001f && Vector3.Dot(forward, reference) < 0f)
+                forward = -forward;
+
+            return forward.normalized;
         }
 
         public static Quaternion AxisToRotation(VFXSplineForwardAxis axis)

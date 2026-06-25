@@ -13,6 +13,13 @@ namespace VFXTimelineSplineTool.EditorTools
     public class VFXSimpleSplineEditor : Editor
     {
         private static int batchAnchorCount = 5;
+        private static VFXSplineAnimator batchAnchorSourceAnimator;
+        private static GameObject batchAnchorChildTemplate;
+        private static bool batchAnchorRemoveTemplateSplineComponents = true;
+        private static float batchAnchorStartOffset = 0f;
+        private static float batchAnchorOffsetStep = -0.01f;
+        private static VFXSplineAnchorProgressWrapMode batchAnchorWrapMode = VFXSplineAnchorProgressWrapMode.Clamp;
+        private const int MaxBatchAnchorCount = 500;
         private const float HealthDuplicatePointDistance = 0.001f;
         private const float HealthClosePointDistance = 0.05f;
         private const float HealthLoopEndpointDistance = 0.15f;
@@ -88,6 +95,16 @@ namespace VFXTimelineSplineTool.EditorTools
             DrawProperty("showDirectionArrows", "显示方向箭头");
             DrawProperty("arrowCount", "方向箭头数量");
             DrawProperty("arrowSize", "方向箭头大小");
+            DrawProperty("showNormals", "显示 Normal");
+            if (spline.showNormals)
+            {
+                DrawProperty("normalColor", "Normal 颜色");
+                DrawProperty("normalLength", "Normal 长度");
+                DrawProperty("normalCount", "Normal 数量");
+                DrawProperty("normalReferenceUseWorldSpace", "Normal 使用世界方向");
+                DrawProperty("normalReference", "Normal 参考方向");
+                DrawProperty("normalAngle", "Normal 旋转角度");
+            }
 
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("动态起点 / 终点绑定", EditorStyles.boldLabel);
@@ -223,6 +240,13 @@ namespace VFXTimelineSplineTool.EditorTools
                 case "showDirectionArrows": return "在路径上显示方向箭头，帮助判断运动方向。";
                 case "arrowCount": return "路径方向箭头的数量。";
                 case "arrowSize": return "路径方向箭头在 Scene 视图中的显示大小。";
+                case "showNormals": return "在 Scene 视图中显示路径 Normal 方向。旋转跟随路径时会使用这个 Normal 作为稳定上方向。";
+                case "normalColor": return "Scene 视图中 Normal 线的颜色。";
+                case "normalLength": return "Normal 线的显示长度。";
+                case "normalCount": return "沿路径显示的 Normal 数量。";
+                case "normalReferenceUseWorldSpace": return "开启后 Normal 参考方向按世界坐标解释，旋转 Spline 物体时 Normal 不会跟着一起旋转。";
+                case "normalReference": return "用于生成 Normal 的参考方向，会投影到路径切线的垂直平面上。可通过 Normal 使用世界方向切换本地/世界解释。";
+                case "normalAngle": return "绕路径切线额外旋转 Normal 的角度。";
                 case "enableDynamicStartEndBinding": return "开启后，路径第一个点会跟随起点 Transform，最后一个点会跟随终点 Transform。";
                 case "dynamicStartTransform": return "动态起点绑定对象。为空时使用 Local 控制点中的第一个点。";
                 case "dynamicEndTransform": return "动态终点绑定对象。为空时使用 Local 控制点中的最后一个点。";
@@ -1239,11 +1263,36 @@ namespace VFXTimelineSplineTool.EditorTools
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                batchAnchorCount = EditorGUILayout.IntSlider(new GUIContent("批量数量", "均分创建 Anchor 的数量。"), batchAnchorCount, 2, 30);
+                batchAnchorCount = EditorGUILayout.IntField(new GUIContent("批量数量", "批量创建 Anchor 的数量。"), batchAnchorCount);
+                batchAnchorCount = Mathf.Clamp(batchAnchorCount, 1, MaxBatchAnchorCount);
             }
 
             if (GUILayout.Button("均分创建 Anchor"))
                 CreateEvenlySpacedAnchors(spline, batchAnchorCount);
+
+            if (GUILayout.Button("隐藏本路径 Anchor 标记"))
+                SetSplineAnchorsSceneLabel(spline, false);
+
+            if (GUILayout.Button("修正本路径 Anchor 缩放"))
+                ResetSplineAnchorScale(spline);
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("跟随 Animator 批量 Offset", EditorStyles.boldLabel);
+            batchAnchorSourceAnimator = (VFXSplineAnimator)EditorGUILayout.ObjectField(new GUIContent("Source Animator", "Anchor 会跟随这个 VFXSplineAnimator 的当前 Progress。"), batchAnchorSourceAnimator, typeof(VFXSplineAnimator), true);
+            batchAnchorChildTemplate = (GameObject)EditorGUILayout.ObjectField(new GUIContent("子模型模板", "可选。批量创建时会复制一份到每个 Anchor 下面。"), batchAnchorChildTemplate, typeof(GameObject), true);
+            batchAnchorRemoveTemplateSplineComponents = EditorGUILayout.Toggle(new GUIContent("移除复制件路径组件", "开启后，会移除复制出来的子模型上的 VFXSplineAnimator / VFXSplineAnchor，让父 Anchor 负责跟随。"), batchAnchorRemoveTemplateSplineComponents);
+            batchAnchorStartOffset = EditorGUILayout.FloatField(new GUIContent("起始 Offset", "第一个 Anchor 的 Progress Offset。"), batchAnchorStartOffset);
+            batchAnchorOffsetStep = EditorGUILayout.FloatField(new GUIContent("Offset 步长", "每生成一个 Anchor 后递增的 Offset。例如 -0.01 表示每个 Anchor 比前一个落后 1%。"), batchAnchorOffsetStep);
+            batchAnchorWrapMode = (VFXSplineAnchorProgressWrapMode)EditorGUILayout.EnumPopup(new GUIContent("循环模式", "Offset 后的最终 Progress 超出 0-1 时如何处理。"), batchAnchorWrapMode);
+
+            using (new EditorGUI.DisabledScope(batchAnchorSourceAnimator == null))
+            {
+                if (GUILayout.Button("固定本路径 Anchor 当前主物体旋转/缩放"))
+                    SyncSplineAnchorRotationSettings(spline, batchAnchorSourceAnimator);
+
+                if (GUILayout.Button("按 Offset 批量创建 Follow Anchor"))
+                    CreateOffsetFollowAnchors(spline, batchAnchorCount, batchAnchorSourceAnimator, batchAnchorChildTemplate, batchAnchorRemoveTemplateSplineComponents, batchAnchorStartOffset, batchAnchorOffsetStep, batchAnchorWrapMode);
+            }
         }
 
         private static void CreateAnchorAtProgress(VFXSimpleSpline spline, float progress)
@@ -1252,14 +1301,17 @@ namespace VFXTimelineSplineTool.EditorTools
 
             GameObject go = new GameObject("VFX Spline Anchor_" + Mathf.RoundToInt(progress * 100f).ToString("000"));
             Undo.RegisterCreatedObjectUndo(go, "Create VFX Spline Anchor");
-            go.transform.SetParent(spline.transform.parent, true);
+            go.transform.SetParent(spline.transform.parent, false);
+            go.transform.localScale = Vector3.one;
 
             VFXSplineAnchor anchor = go.AddComponent<VFXSplineAnchor>();
             anchor.spline = spline;
             anchor.progress = Mathf.Clamp01(progress);
             anchor.useDistanceBasedProgress = true;
+            anchor.showSceneLabel = false;
             anchor.label = go.name;
             anchor.ApplyAnchor();
+            go.transform.localScale = Vector3.one;
 
             EditorUtility.SetDirty(anchor);
             Selection.activeGameObject = go;
@@ -1269,7 +1321,7 @@ namespace VFXTimelineSplineTool.EditorTools
         private static void CreateEvenlySpacedAnchors(VFXSimpleSpline spline, int count)
         {
             if (spline == null) return;
-            count = Mathf.Clamp(count, 2, 30);
+            count = Mathf.Clamp(count, 1, MaxBatchAnchorCount);
 
             GameObject group = new GameObject(spline.name + "_Anchors");
             Undo.RegisterCreatedObjectUndo(group, "Create Spline Anchor Group");
@@ -1283,18 +1335,176 @@ namespace VFXTimelineSplineTool.EditorTools
                 float progress = count == 1 ? 0f : i / (float)(count - 1);
                 GameObject go = new GameObject("VFX Spline Anchor_" + Mathf.RoundToInt(progress * 100f).ToString("000"));
                 Undo.RegisterCreatedObjectUndo(go, "Create VFX Spline Anchor");
-                go.transform.SetParent(group.transform, true);
+                go.transform.SetParent(group.transform, false);
+                go.transform.localScale = Vector3.one;
 
                 VFXSplineAnchor anchor = go.AddComponent<VFXSplineAnchor>();
                 anchor.spline = spline;
                 anchor.progress = progress;
                 anchor.useDistanceBasedProgress = true;
+                anchor.showSceneLabel = false;
                 anchor.label = go.name;
                 anchor.ApplyAnchor();
+                go.transform.localScale = Vector3.one;
                 EditorUtility.SetDirty(anchor);
             }
 
             Selection.activeGameObject = group;
+            SceneView.RepaintAll();
+        }
+
+        private static void CreateOffsetFollowAnchors(VFXSimpleSpline spline, int count, VFXSplineAnimator sourceAnimator, GameObject childTemplate, bool removeTemplateSplineComponents, float startOffset, float offsetStep, VFXSplineAnchorProgressWrapMode wrapMode)
+        {
+            if (spline == null || sourceAnimator == null) return;
+            count = Mathf.Clamp(count, 1, MaxBatchAnchorCount);
+
+            GameObject group = new GameObject(spline.name + "_FollowOffsetAnchors");
+            Undo.RegisterCreatedObjectUndo(group, "Create Follow Offset Anchor Group");
+            group.transform.SetParent(spline.transform.parent, true);
+            group.transform.position = Vector3.zero;
+            group.transform.rotation = Quaternion.identity;
+            group.transform.localScale = Vector3.one;
+
+            for (int i = 0; i < count; i++)
+            {
+                float offset = startOffset + offsetStep * i;
+                GameObject go = new GameObject("VFX Spline Anchor_Offset_" + i.ToString("000"));
+                Undo.RegisterCreatedObjectUndo(go, "Create VFX Spline Anchor");
+                go.transform.SetParent(group.transform, false);
+                go.transform.localScale = Vector3.one;
+
+                VFXSplineAnchor anchor = go.AddComponent<VFXSplineAnchor>();
+                anchor.spline = spline;
+                anchor.anchorMode = VFXSplineAnchorMode.FollowAnimatorProgress;
+                anchor.sourceAnimator = sourceAnimator;
+                anchor.autoUseSourceSpline = true;
+                anchor.progressOffset = offset;
+                anchor.progressWrapMode = wrapMode;
+                anchor.useDistanceBasedProgress = true;
+                anchor.showSceneLabel = false;
+                anchor.label = go.name;
+                ConfigureAnchorToFollowSourceTransform(sourceAnimator, anchor);
+                anchor.ApplyAnchor();
+                go.transform.localScale = sourceAnimator.transform.localScale;
+                CreateAnchorChildFromTemplate(anchor.transform, childTemplate, sourceAnimator.transform, removeTemplateSplineComponents);
+                EditorUtility.SetDirty(anchor);
+            }
+
+            Selection.activeGameObject = group;
+            SceneView.RepaintAll();
+        }
+
+        private static void ConfigureAnchorToFollowSourceTransform(VFXSplineAnimator sourceAnimator, VFXSplineAnchor anchor)
+        {
+            if (sourceAnimator == null || anchor == null) return;
+
+            anchor.rotationMode = sourceAnimator.rotationMode;
+            anchor.forwardAxis = sourceAnimator.forwardAxis;
+            anchor.rotationOffsetEuler = sourceAnimator.rotationOffsetEuler;
+            anchor.fallbackForward = sourceAnimator.fallbackForward;
+            anchor.followSourceRotation = false;
+            anchor.followSourceScale = false;
+        }
+
+        private static void CreateAnchorChildFromTemplate(Transform parent, GameObject template, Transform sourceTransform, bool removeSplineComponents)
+        {
+            if (parent == null || template == null) return;
+
+            GameObject child = null;
+            if (AssetDatabase.Contains(template))
+                child = PrefabUtility.InstantiatePrefab(template) as GameObject;
+            if (child == null)
+                child = UnityEngine.Object.Instantiate(template);
+
+            Undo.RegisterCreatedObjectUndo(child, "Create Anchor Child");
+            child.name = template.name;
+            child.transform.SetParent(parent, false);
+
+            if (removeSplineComponents)
+                RemoveSplineComponents(child);
+
+            child.transform.localPosition = Vector3.zero;
+            child.transform.localRotation = Quaternion.identity;
+            child.transform.localScale = Vector3.one;
+        }
+
+        private static void RemoveSplineComponents(GameObject root)
+        {
+            if (root == null) return;
+
+            VFXSplineAnimator[] animators = root.GetComponentsInChildren<VFXSplineAnimator>(true);
+            for (int i = 0; i < animators.Length; i++)
+                Undo.DestroyObjectImmediate(animators[i]);
+
+            VFXSplineAnchor[] anchors = root.GetComponentsInChildren<VFXSplineAnchor>(true);
+            for (int i = 0; i < anchors.Length; i++)
+                Undo.DestroyObjectImmediate(anchors[i]);
+        }
+
+        private static void SetSplineAnchorsSceneLabel(VFXSimpleSpline spline, bool show)
+        {
+            if (spline == null) return;
+
+            VFXSplineAnchor[] anchors = UnityEngine.Object.FindObjectsOfType<VFXSplineAnchor>();
+            for (int i = 0; i < anchors.Length; i++)
+            {
+                VFXSplineAnchor anchor = anchors[i];
+                if (anchor == null || anchor.GetActiveSpline() != spline) continue;
+
+                Undo.RecordObject(anchor, "Set Anchor Scene Label");
+                anchor.showSceneLabel = show;
+                EditorUtility.SetDirty(anchor);
+            }
+
+            SceneView.RepaintAll();
+        }
+
+        private static void ResetSplineAnchorScale(VFXSimpleSpline spline)
+        {
+            if (spline == null) return;
+
+            VFXSplineAnchor[] anchors = UnityEngine.Object.FindObjectsOfType<VFXSplineAnchor>();
+            for (int i = 0; i < anchors.Length; i++)
+            {
+                VFXSplineAnchor anchor = anchors[i];
+                if (anchor == null || anchor.GetActiveSpline() != spline) continue;
+
+                Undo.RecordObject(anchor.transform, "Reset Anchor Scale");
+                anchor.transform.localScale = GetAnchorResetScale(anchor);
+                anchor.ApplyAnchor();
+                anchor.transform.localScale = GetAnchorResetScale(anchor);
+                EditorUtility.SetDirty(anchor);
+            }
+
+            SceneView.RepaintAll();
+        }
+
+        private static Vector3 GetAnchorResetScale(VFXSplineAnchor anchor)
+        {
+            if (anchor != null && anchor.followSourceScale && anchor.sourceAnimator != null)
+                return anchor.sourceAnimator.transform.localScale;
+
+            return Vector3.one;
+        }
+
+        private static void SyncSplineAnchorRotationSettings(VFXSimpleSpline spline, VFXSplineAnimator sourceAnimator)
+        {
+            if (spline == null || sourceAnimator == null) return;
+
+            VFXSplineAnchor[] anchors = UnityEngine.Object.FindObjectsOfType<VFXSplineAnchor>();
+            for (int i = 0; i < anchors.Length; i++)
+            {
+                VFXSplineAnchor anchor = anchors[i];
+                if (anchor == null || anchor.GetActiveSpline() != spline) continue;
+                if (anchor.anchorMode == VFXSplineAnchorMode.FollowAnimatorProgress && anchor.sourceAnimator != sourceAnimator) continue;
+
+                Undo.RecordObject(anchor, "Sync Anchor Rotation Settings");
+                Undo.RecordObject(anchor.transform, "Apply Anchor Rotation Settings");
+                ConfigureAnchorToFollowSourceTransform(sourceAnimator, anchor);
+                anchor.ApplyAnchor();
+                EditorUtility.SetDirty(anchor);
+            }
+
             SceneView.RepaintAll();
         }
 
@@ -1566,6 +1776,9 @@ namespace VFXTimelineSplineTool.EditorTools
 
             if (spline.showDirectionArrows)
                 DrawDirectionArrows(spline);
+
+            if (spline.showNormals)
+                DrawNormals(spline);
         }
 
         private static void HandleSplineLineSelection(VFXSimpleSpline spline, bool selected)
@@ -1622,6 +1835,20 @@ namespace VFXTimelineSplineTool.EditorTools
                 Vector3 tangent = spline.GetTangent(p, spline.progressMarksUseDistance);
                 float size = HandleUtility.GetHandleSize(pos) * spline.arrowSize;
                 Handles.ArrowHandleCap(0, pos, Quaternion.LookRotation(tangent, Vector3.up), size, EventType.Repaint);
+            }
+        }
+
+        private static void DrawNormals(VFXSimpleSpline spline)
+        {
+            Handles.color = spline.normalColor;
+            int count = Mathf.Max(1, spline.normalCount);
+            for (int i = 1; i <= count; i++)
+            {
+                float p = i / (float)(count + 1);
+                Vector3 pos = spline.GetPoint(p, spline.progressMarksUseDistance);
+                Vector3 normal = spline.GetNormal(p, spline.progressMarksUseDistance);
+                float length = HandleUtility.GetHandleSize(pos) * spline.normalLength;
+                Handles.DrawAAPolyLine(2f, pos, pos + normal * length);
             }
         }
 

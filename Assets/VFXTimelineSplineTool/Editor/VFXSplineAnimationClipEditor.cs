@@ -456,7 +456,8 @@ namespace VFXTimelineSplineTool.EditorTools
                 if (tangent.sqrMagnitude < 0.000001f)
                     tangent = template.fallbackForward.sqrMagnitude > 0.000001f ? template.fallbackForward.normalized : Vector3.forward;
 
-                worldRotation = BuildRotation(template, targetTransform, tangent) * Quaternion.Euler(template.rotationOffsetEuler);
+                Vector3 normal = spline.GetNormal(progress, template.useDistanceBasedProgress);
+                worldRotation = BuildRotation(template, targetTransform, tangent, normal) * Quaternion.Euler(template.rotationOffsetEuler);
             }
 
             BakeSample sample = new BakeSample();
@@ -527,18 +528,20 @@ namespace VFXTimelineSplineTool.EditorTools
             return result;
         }
 
-        private static Quaternion BuildRotation(VFXSplineAnimationBehaviour template, Transform targetTransform, Vector3 tangent)
+        private static Quaternion BuildRotation(VFXSplineAnimationBehaviour template, Transform targetTransform, Vector3 tangent, Vector3 up)
         {
             Vector3 forward = tangent.normalized;
 
-            if (template.rotationMode == VFXSplineRotationMode.YawOnly)
+            if (VFXSplineAnimator.IsPlanarRotationMode(template.rotationMode))
             {
-                forward.y = 0f;
-                if (forward.sqrMagnitude < 0.000001f)
-                    forward = targetTransform != null ? targetTransform.forward : Vector3.forward;
+                Vector3 reference = template.fallbackForward.sqrMagnitude > 0.000001f ? template.fallbackForward : (targetTransform != null ? targetTransform.forward : Vector3.forward);
+                forward = VFXSplineAnimator.ResolvePlanarForward(tangent, reference, template.rotationMode == VFXSplineRotationMode.PlanarStable);
             }
 
-            Quaternion look = Quaternion.LookRotation(forward.normalized, Vector3.up);
+            if (up.sqrMagnitude < 0.000001f)
+                up = Vector3.up;
+
+            Quaternion look = Quaternion.LookRotation(forward.normalized, up.normalized);
             return look * Quaternion.Inverse(VFXSplineAnimator.AxisToRotation(template.forwardAxis));
         }
 

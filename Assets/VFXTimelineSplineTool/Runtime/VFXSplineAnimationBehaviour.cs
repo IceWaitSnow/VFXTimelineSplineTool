@@ -128,25 +128,28 @@ namespace VFXTimelineSplineTool
                 if (tangent.sqrMagnitude < 0.000001f)
                     tangent = fallbackForward.sqrMagnitude > 0.000001f ? fallbackForward.normalized : Vector3.forward;
 
-                result.rotation = BuildRotation(target, tangent) * Quaternion.Euler(rotationOffsetEuler);
+                Vector3 normal = spline.GetNormal(p, useDistanceBasedProgress);
+                result.rotation = BuildRotation(target, tangent, normal) * Quaternion.Euler(rotationOffsetEuler);
                 result.hasRotation = true;
             }
 
             return true;
         }
 
-        private Quaternion BuildRotation(Transform target, Vector3 tangent)
+        private Quaternion BuildRotation(Transform target, Vector3 tangent, Vector3 up)
         {
             Vector3 forward = tangent.normalized;
 
-            if (rotationMode == VFXSplineRotationMode.YawOnly)
+            if (VFXSplineAnimator.IsPlanarRotationMode(rotationMode))
             {
-                forward.y = 0f;
-                if (forward.sqrMagnitude < 0.000001f)
-                    forward = target.forward;
+                Vector3 reference = fallbackForward.sqrMagnitude > 0.000001f ? fallbackForward : (target != null ? target.forward : Vector3.forward);
+                forward = VFXSplineAnimator.ResolvePlanarForward(tangent, reference, rotationMode == VFXSplineRotationMode.PlanarStable);
             }
 
-            Quaternion look = Quaternion.LookRotation(forward.normalized, Vector3.up);
+            if (up.sqrMagnitude < 0.000001f)
+                up = Vector3.up;
+
+            Quaternion look = Quaternion.LookRotation(forward.normalized, up.normalized);
             return look * Quaternion.Inverse(VFXSplineAnimator.AxisToRotation(forwardAxis));
         }
 

@@ -53,6 +53,8 @@ namespace VFXTimelineSplineTool
         public VFXSplineForwardAxis forwardAxis = VFXSplineForwardAxis.ZPositive;
         public Vector3 rotationOffsetEuler = Vector3.zero;
         public Vector3 fallbackForward = Vector3.forward;
+        public bool followSourceRotation = false;
+        public bool followSourceScale = false;
 
         [Header("编辑器预览")]
         public bool previewInEditMode = true;
@@ -120,6 +122,8 @@ namespace VFXTimelineSplineTool
             forwardAxis = VFXSplineForwardAxis.ZPositive;
             rotationOffsetEuler = Vector3.zero;
             fallbackForward = Vector3.forward;
+            followSourceRotation = false;
+            followSourceScale = false;
             previewInEditMode = true;
             applyOnValidate = true;
             showSceneLabel = true;
@@ -256,29 +260,41 @@ namespace VFXTimelineSplineTool
                 transform.position = pos;
             }
 
-            if (rotationMode != VFXSplineRotationMode.None)
+            if (followSourceRotation && sourceAnimator != null)
+            {
+                transform.rotation = sourceAnimator.transform.rotation;
+            }
+            else if (rotationMode != VFXSplineRotationMode.None)
             {
                 Vector3 tangent = activeSpline.GetTangent(p, useDistanceBasedProgress);
                 if (tangent.sqrMagnitude < 0.000001f)
                     tangent = fallbackForward.sqrMagnitude > 0.000001f ? fallbackForward.normalized : Vector3.forward;
 
-                Quaternion rot = BuildRotation(tangent);
+                Vector3 normal = activeSpline.GetNormal(p, useDistanceBasedProgress);
+                Quaternion rot = BuildRotation(tangent, normal);
                 transform.rotation = rot * Quaternion.Euler(rotationOffsetEuler);
             }
+
+            if (followSourceScale && sourceAnimator != null)
+                transform.localScale = sourceAnimator.transform.localScale;
         }
 
         public Quaternion BuildRotation(Vector3 tangent)
         {
+            return BuildRotation(tangent, Vector3.up);
+        }
+
+        public Quaternion BuildRotation(Vector3 tangent, Vector3 up)
+        {
             Vector3 forward = tangent.normalized;
 
-            if (rotationMode == VFXSplineRotationMode.YawOnly)
-            {
-                forward.y = 0f;
-                if (forward.sqrMagnitude < 0.000001f)
-                    forward = transform.forward;
-            }
+            if (VFXSplineAnimator.IsPlanarRotationMode(rotationMode))
+                forward = VFXSplineAnimator.ResolvePlanarForward(tangent, fallbackForward, rotationMode == VFXSplineRotationMode.PlanarStable);
 
-            Quaternion look = Quaternion.LookRotation(forward.normalized, Vector3.up);
+            if (up.sqrMagnitude < 0.000001f)
+                up = Vector3.up;
+
+            Quaternion look = Quaternion.LookRotation(forward.normalized, up.normalized);
             return look * Quaternion.Inverse(VFXSplineAnimator.AxisToRotation(forwardAxis));
         }
     }

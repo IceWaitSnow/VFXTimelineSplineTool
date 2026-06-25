@@ -39,7 +39,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
             EditorGUILayout.Space(4);
             EditorGUILayout.LabelField("旋转设置", EditorStyles.boldLabel);
-            DrawProperty("rotationMode", "旋转模式");
+            VFXSplineRotationModeGUI.Draw(serializedObject, "旋转模式");
             DrawProperty("forwardAxis", "前向轴");
             DrawProperty("rotationOffsetEuler", "旋转偏移 Euler");
             DrawProperty("fallbackForward", "备用前向");
@@ -886,7 +886,8 @@ namespace VFXTimelineSplineTool.EditorTools
                 if (tangent.sqrMagnitude < 0.000001f)
                     tangent = animator.fallbackForward.sqrMagnitude > 0.000001f ? animator.fallbackForward.normalized : Vector3.forward;
 
-                worldRot = animator.BuildRotation(tangent) * Quaternion.Euler(animator.rotationOffsetEuler);
+                Vector3 normal = animator.spline.GetNormal(p, animator.useDistanceBasedProgress);
+                worldRot = animator.BuildRotation(tangent, normal) * Quaternion.Euler(animator.rotationOffsetEuler);
             }
 
             BakeSample sample = new BakeSample();

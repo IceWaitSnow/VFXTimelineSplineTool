@@ -77,7 +77,7 @@ namespace VFXTimelineSplineTool
                 eventPosition = spline.GetPoint(evaluatedProgress, distanceBased) + eventPositionOffset;
                 Vector3 tangent = spline.GetTangent(evaluatedProgress, distanceBased);
                 if (tangent.sqrMagnitude > 0.000001f)
-                    eventRotation = Quaternion.LookRotation(tangent, Vector3.up);
+                    eventRotation = Quaternion.LookRotation(tangent, spline.GetNormal(evaluatedProgress, distanceBased));
             }
 
             switch (triggerType)
@@ -200,6 +200,13 @@ namespace VFXTimelineSplineTool
         public bool showDirectionArrows = true;
         [Range(1, 64)] public int arrowCount = 8;
         [Min(0.01f)] public float arrowSize = 0.35f;
+        public bool showNormals = false;
+        public Color normalColor = Color.blue;
+        [Min(0.01f)] public float normalLength = 1f;
+        [Range(1, 128)] public int normalCount = 24;
+        public bool normalReferenceUseWorldSpace = false;
+        public Vector3 normalReference = Vector3.up;
+        public float normalAngle = 0f;
         [HideInInspector] public bool showEvents = false; // v2.0 起隐藏：事件系统不作为正式教程流程。
         [HideInInspector] public bool eventMarksUseDistance = true;
 
@@ -258,6 +265,9 @@ namespace VFXTimelineSplineTool
             distanceSampleResolution = Mathf.Clamp(distanceSampleResolution, 32, 2048);
             progressMarkCount = Mathf.Clamp(progressMarkCount, 1, 20);
             arrowCount = Mathf.Clamp(arrowCount, 1, 64);
+            normalCount = Mathf.Clamp(normalCount, 1, 128);
+            arrowSize = Mathf.Max(0.01f, arrowSize);
+            normalLength = Mathf.Max(0.01f, normalLength);
             MarkDistanceCacheDirty();
         }
 
@@ -310,15 +320,83 @@ namespace VFXTimelineSplineTool
         public Vector3 GetTangent(float progress, bool distanceBased)
         {
             progress = Mathf.Clamp01(progress);
-            const float delta = 0.001f;
-            float a = loop ? Mathf.Repeat(progress - delta, 1f) : Mathf.Clamp01(progress - delta);
-            float b = loop ? Mathf.Repeat(progress + delta, 1f) : Mathf.Clamp01(progress + delta);
-            Vector3 p0 = GetPoint(a, distanceBased);
-            Vector3 p1 = GetPoint(b, distanceBased);
-            Vector3 tangent = p1 - p0;
+
+            float rawProgress = progress;
+            if (distanceBased)
+                TryDistanceProgressToRawProgress(progress, out rawProgress);
+
+            Vector3 tangent = GetForwardRawTangent(rawProgress);
             if (tangent.sqrMagnitude < 0.000001f)
                 tangent = transform.forward;
             return tangent.normalized;
+        }
+
+        public Vector3 GetNormal(float progress, bool distanceBased)
+        {
+            Vector3 tangent = GetTangent(progress, distanceBased);
+            if (tangent.sqrMagnitude < 0.000001f)
+                tangent = transform.forward;
+
+            Vector3 reference = normalReference.sqrMagnitude > 0.000001f ? normalReference.normalized : Vector3.up;
+            if (!normalReferenceUseWorldSpace)
+                reference = transform.TransformDirection(reference);
+
+            Vector3 normal = reference - tangent * Vector3.Dot(reference, tangent);
+            if (normal.sqrMagnitude < 0.000001f)
+            {
+                normal = Vector3.Cross(tangent, transform.right);
+                if (normal.sqrMagnitude < 0.000001f)
+                    normal = Vector3.Cross(tangent, transform.forward);
+            }
+
+            if (normal.sqrMagnitude < 0.000001f)
+                normal = Vector3.up;
+
+            normal.Normalize();
+            if (!Mathf.Approximately(normalAngle, 0f))
+                normal = Quaternion.AngleAxis(normalAngle, tangent.normalized) * normal;
+
+            return normal.normalized;
+        }
+
+        public Vector3 GetRawTangent(float progress)
+        {
+            progress = Mathf.Clamp01(progress);
+            if (loop && progress >= 1f)
+                progress = 0f;
+
+            if (pathMode == VFXSplinePathMode.Bezier)
+                return GetBezierRawTangent(progress);
+
+            return GetCatmullRomRawTangent(progress);
+        }
+
+        private Vector3 GetForwardRawTangent(float progress)
+        {
+            progress = Mathf.Clamp01(progress);
+            if (loop && progress >= 1f)
+                progress = 0f;
+
+            float delta = 0.0025f;
+            for (int i = 0; i < 5; i++)
+            {
+                float a = progress;
+                float b = loop ? Mathf.Repeat(progress + delta, 1f) : Mathf.Clamp01(progress + delta);
+
+                if (!loop && Mathf.Approximately(a, b))
+                {
+                    a = Mathf.Clamp01(progress - delta);
+                    b = progress;
+                }
+
+                Vector3 tangent = GetPointByRawProgress(b) - GetPointByRawProgress(a);
+                if (tangent.sqrMagnitude > 0.000001f)
+                    return tangent;
+
+                delta *= 2f;
+            }
+
+            return GetRawTangent(progress);
         }
 
         public Vector3 GetPointByDistanceProgress(float distanceProgress)
@@ -456,6 +534,82 @@ namespace VFXTimelineSplineTool
             return transform.TransformPoint(CubicBezier(p0, p1, p2, p3, t));
         }
 
+        private Vector3 GetCatmullRomRawTangent(float progress)
+        {
+            int count = localPoints != null ? localPoints.Count : 0;
+            if (count < 2) return transform.forward;
+
+            if (loop)
+            {
+                float loopScaled = progress * count;
+                int loopP1 = Mathf.FloorToInt(loopScaled);
+                if (loopP1 >= count) loopP1 = 0;
+                int loopP2 = (loopP1 + 1) % count;
+                int loopP0 = (loopP1 - 1 + count) % count;
+                int loopP3 = (loopP2 + 1) % count;
+                float loopT = loopScaled - Mathf.Floor(loopScaled);
+
+                Vector3 localTangent = CatmullRomDerivative(
+                    GetEffectiveLocalPoint(loopP0),
+                    GetEffectiveLocalPoint(loopP1),
+                    GetEffectiveLocalPoint(loopP2),
+                    GetEffectiveLocalPoint(loopP3),
+                    loopT);
+                return transform.TransformVector(localTangent);
+            }
+
+            float scaled = progress * (count - 1);
+            int p1 = Mathf.FloorToInt(scaled);
+            if (p1 >= count - 1) p1 = count - 2;
+            int p2 = Mathf.Min(p1 + 1, count - 1);
+            int p0 = Mathf.Max(p1 - 1, 0);
+            int p3 = Mathf.Min(p2 + 1, count - 1);
+            float t = scaled - p1;
+
+            Vector3 local = CatmullRomDerivative(
+                GetEffectiveLocalPoint(p0),
+                GetEffectiveLocalPoint(p1),
+                GetEffectiveLocalPoint(p2),
+                GetEffectiveLocalPoint(p3),
+                t);
+            return transform.TransformVector(local);
+        }
+
+        private Vector3 GetBezierRawTangent(float progress)
+        {
+            EnsureBezierPoints();
+            int count = bezierPoints != null ? bezierPoints.Count : 0;
+            if (count < 2) return transform.forward;
+
+            if (loop)
+            {
+                float loopScaled = progress * count;
+                int loopIndex = Mathf.FloorToInt(loopScaled);
+                if (loopIndex >= count) loopIndex = 0;
+                int nextIndex = (loopIndex + 1) % count;
+                float loopT = loopScaled - Mathf.Floor(loopScaled);
+
+                VFXBezierPoint point = bezierPoints[loopIndex];
+                VFXBezierPoint nextPoint = bezierPoints[nextIndex];
+                Vector3 loopP0 = GetEffectiveBezierPosition(loopIndex);
+                Vector3 loopP1 = loopP0 + (point != null ? point.outTangent : Vector3.zero);
+                Vector3 loopP3 = GetEffectiveBezierPosition(nextIndex);
+                Vector3 loopP2 = loopP3 + (nextPoint != null ? nextPoint.inTangent : Vector3.zero);
+                return transform.TransformVector(CubicBezierDerivative(loopP0, loopP1, loopP2, loopP3, loopT));
+            }
+
+            float scaled = progress * (count - 1);
+            int index = Mathf.FloorToInt(scaled);
+            if (index >= count - 1) index = count - 2;
+            float t = scaled - index;
+
+            Vector3 p0 = GetEffectiveBezierPosition(index);
+            Vector3 p1 = p0 + bezierPoints[index].outTangent;
+            Vector3 p3 = GetEffectiveBezierPosition(index + 1);
+            Vector3 p2 = p3 + bezierPoints[index + 1].inTangent;
+            return transform.TransformVector(CubicBezierDerivative(p0, p1, p2, p3, t));
+        }
+
         public Vector3 GetEffectiveLocalPoint(int index)
         {
             if (localPoints == null || localPoints.Count == 0) return Vector3.zero;
@@ -583,12 +737,29 @@ namespace VFXTimelineSplineTool
                     (-p0 + 3f * p1 - 3f * p2 + p3) * t3);
         }
 
+        private static Vector3 CatmullRomDerivative(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float t)
+        {
+            float t2 = t * t;
+            return 0.5f *
+                   ((-p0 + p2) +
+                    (2f * (2f * p0 - 5f * p1 + 4f * p2 - p3)) * t +
+                    (3f * (-p0 + 3f * p1 - 3f * p2 + p3)) * t2);
+        }
+
         private static Vector3 CubicBezier(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float t)
         {
             float u = 1f - t;
             float tt = t * t;
             float uu = u * u;
             return uu * u * p0 + 3f * uu * t * p1 + 3f * u * tt * p2 + tt * t * p3;
+        }
+
+        private static Vector3 CubicBezierDerivative(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float t)
+        {
+            float u = 1f - t;
+            return 3f * u * u * (p1 - p0) +
+                   6f * u * t * (p2 - p1) +
+                   3f * t * t * (p3 - p2);
         }
 
         public void ResetPath()
