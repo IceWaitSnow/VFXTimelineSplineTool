@@ -64,6 +64,7 @@ namespace VFXTimelineSplineTool
         public VFXSplineForwardAxis forwardAxis = VFXSplineForwardAxis.ZPositive;
         public Vector3 rotationOffsetEuler = Vector3.zero;
         public Vector3 fallbackForward = Vector3.forward;
+        public bool ignoreSplineTransformRotation = false;
 
         [Header("编辑器预览")]
         [Tooltip("新版编辑模式预览控制。Off=编辑模式不自动写 Transform；Always=和旧版一样一直预览；Only When Selected=只有选中物体时才自动预览。")]
@@ -267,6 +268,7 @@ namespace VFXTimelineSplineTool
                     tangent = fallbackForward.sqrMagnitude > 0.000001f ? fallbackForward.normalized : Vector3.forward;
 
                 Vector3 normal = spline.GetNormal(p, useDistanceBasedProgress);
+                ApplySplineRotationLock(spline, ignoreSplineTransformRotation, ref tangent, ref normal);
                 Quaternion rot = BuildRotation(tangent, normal);
                 transform.rotation = rot * Quaternion.Euler(rotationOffsetEuler);
             }
@@ -378,6 +380,18 @@ namespace VFXTimelineSplineTool
                 forward = -forward;
 
             return forward.normalized;
+        }
+
+        public static void ApplySplineRotationLock(VFXSimpleSpline spline, bool ignoreSplineRotation, ref Vector3 tangent, ref Vector3 normal)
+        {
+            if (!ignoreSplineRotation || spline == null)
+                return;
+
+            Transform splineTransform = spline.transform;
+            tangent = splineTransform.InverseTransformDirection(tangent);
+
+            if (!spline.normalReferenceUseWorldSpace)
+                normal = splineTransform.InverseTransformDirection(normal);
         }
 
         public static Quaternion AxisToRotation(VFXSplineForwardAxis axis)

@@ -64,6 +64,7 @@ namespace VFXTimelineSplineTool.EditorTools
             DrawProperty("forwardAxis", "前向轴");
             DrawProperty("rotationOffsetEuler", "旋转偏移 Euler");
             DrawProperty("fallbackForward", "备用前向");
+            DrawProperty("ignoreSplineTransformRotation", "忽略 Spline 旋转");
             DrawProperty("followSourceRotation", "跟随 Source 旋转");
             DrawProperty("followSourceScale", "跟随 Source 缩放");
             using (new EditorGUI.DisabledScope(anchor.sourceAnimator == null))
@@ -166,6 +167,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 case "forwardAxis": return "指定 Anchor 哪根本地轴作为前进方向。";
                 case "rotationOffsetEuler": return "在路径方向旋转之后额外叠加的 Euler 角偏移。";
                 case "fallbackForward": return "路径切线过短时使用的备用前向方向。";
+                case "ignoreSplineTransformRotation": return "开启后，Anchor 位置仍跟随旋转后的 Spline，但旋转计算会忽略 Spline 物体自身的 Transform 旋转。";
                 case "followSourceRotation": return "开启后 Anchor 直接使用 Source Animator 物体当前世界旋转，不再按本 Anchor 的路径切线旋转。";
                 case "followSourceScale": return "开启后 Anchor 使用 Source Animator 物体当前 Local Scale。";
                 case "previewInEditMode": return "编辑模式下实时预览 Anchor 在路径上的位置。";
@@ -586,6 +588,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 if (tangent.sqrMagnitude < 0.000001f)
                     tangent = anchor.fallbackForward.sqrMagnitude > 0.000001f ? anchor.fallbackForward.normalized : Vector3.forward;
                 Vector3 normal = activeSpline.GetNormal(p, anchor.useDistanceBasedProgress);
+                VFXSplineAnimator.ApplySplineRotationLock(activeSpline, anchor.ignoreSplineTransformRotation, ref tangent, ref normal);
                 worldRotation = anchor.BuildRotation(tangent, normal) * Quaternion.Euler(anchor.rotationOffsetEuler);
             }
 

@@ -68,9 +68,6 @@ namespace VFXTimelineSplineTool.EditorTools
 
             spline = (VFXSimpleSpline)EditorGUILayout.ObjectField("Spline", spline, typeof(VFXSimpleSpline), true);
 
-            EditorGUILayout.Space(4);
-            DrawOverlaySettings();
-
             if (spline == null)
             {
                 EditorGUILayout.HelpBox("请选择一个带 VFXSimpleSpline 的物体，或者把 Spline 拖到上方字段。", MessageType.Info);
@@ -86,25 +83,6 @@ namespace VFXTimelineSplineTool.EditorTools
 
             DrawToolbar(count);
             DrawPointList(count);
-        }
-
-        private void DrawOverlaySettings()
-        {
-            EditorGUILayout.LabelField("Scene 控制点覆盖层", EditorStyles.boldLabel);
-            EditorGUI.BeginChangeCheck();
-            bool enabled = EditorGUILayout.Toggle(new GUIContent("启用控制点 Handle", "开启后可以在 Scene 视图中选择和移动 Spline 控制点。"), VFXSplinePointAPI.Enabled);
-            float pickSize = EditorGUILayout.Slider(new GUIContent("拾取尺寸倍数", "控制点的可点击区域放大倍数。点和 Transform Gizmo 重叠时，可以调大这个值。"), VFXSplinePointAPI.PickSizeMultiplier, 1f, 8f);
-            bool largerFirst = EditorGUILayout.Toggle(new GUIContent("放大第一个点", "让第一个控制点更容易被看到和点中。"), VFXSplinePointAPI.LargerFirstPoint);
-            if (EditorGUI.EndChangeCheck())
-            {
-                VFXSplinePointAPI.Enabled = enabled;
-                VFXSplinePointAPI.PickSizeMultiplier = pickSize;
-                VFXSplinePointAPI.LargerFirstPoint = largerFirst;
-            }
-
-            string appendKey = "A";
-            string menuKey = "M";
-            EditorGUILayout.HelpBox("单一操作模式：Unity Transform Gizmo 始终可用，用来移动整条 Spline；控制点也可直接点选和拖动。快捷键：" + appendKey + " 连续追加点，" + menuKey + " 点菜单 / 线段插点，F 聚焦当前点，Delete 删除当前点。", MessageType.None);
         }
 
         private void DrawToolbar(int count)

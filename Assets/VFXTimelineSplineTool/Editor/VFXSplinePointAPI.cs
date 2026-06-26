@@ -89,7 +89,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
         public static bool LargerFirstPoint
         {
-            get { return EditorPrefs.GetBool(LargerFirstPointKey, true); }
+            get { return false; }
             set
             {
                 EditorPrefs.SetBool(LargerFirstPointKey, value);

@@ -43,6 +43,7 @@ namespace VFXTimelineSplineTool
         public VFXSplineForwardAxis forwardAxis = VFXSplineForwardAxis.ZPositive;
         public Vector3 rotationOffsetEuler = Vector3.zero;
         public Vector3 fallbackForward = Vector3.forward;
+        public bool ignoreSplineTransformRotation = false;
 
         [HideInInspector] public bool triggerEvents = false; // v2.0 起隐藏：保留旧版兼容。
 
@@ -129,6 +130,7 @@ namespace VFXTimelineSplineTool
                     tangent = fallbackForward.sqrMagnitude > 0.000001f ? fallbackForward.normalized : Vector3.forward;
 
                 Vector3 normal = spline.GetNormal(p, useDistanceBasedProgress);
+                VFXSplineAnimator.ApplySplineRotationLock(spline, ignoreSplineTransformRotation, ref tangent, ref normal);
                 result.rotation = BuildRotation(target, tangent, normal) * Quaternion.Euler(rotationOffsetEuler);
                 result.hasRotation = true;
             }

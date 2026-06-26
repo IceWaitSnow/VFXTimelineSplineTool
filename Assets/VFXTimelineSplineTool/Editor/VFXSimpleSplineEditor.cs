@@ -84,7 +84,6 @@ namespace VFXTimelineSplineTool.EditorTools
 
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("显示设置", EditorStyles.boldLabel);
-            DrawPointEditingSettings();
             DrawProperty("alwaysShowPathInSceneView", "Scene 中始终显示路径");
             DrawProperty("showPointLabels", "显示控制点编号");
             DrawProperty("showAllPointHandles", "显示全部控制点坐标轴");
@@ -257,21 +256,6 @@ namespace VFXTimelineSplineTool.EditorTools
                 case "localPoints": return "Catmull-Rom 模式下使用的 Local Space 控制点。";
                 default: return "";
             }
-        }
-        private static void DrawPointEditingSettings()
-        {
-            EditorGUI.BeginChangeCheck();
-            bool enabled = EditorGUILayout.Toggle(new GUIContent("启用 Scene 控制点编辑", "开启后，选中 Spline 时可以直接点选控制点、按 M 打开点菜单或在线段插入点。Unity Transform Gizmo 会保持可用，用来移动整条 Spline。"), VFXSplinePointAPI.Enabled);
-            float pickSize = EditorGUILayout.Slider(new GUIContent("拾取尺寸倍数", "控制点的可点击区域放大倍数。点和 Transform Gizmo 重叠时，可以调大这个值。"), VFXSplinePointAPI.PickSizeMultiplier, 1f, 8f);
-            bool largerFirst = EditorGUILayout.Toggle(new GUIContent("放大第一个点", "让第一个控制点更容易被看到和点中。"), VFXSplinePointAPI.LargerFirstPoint);
-            if (EditorGUI.EndChangeCheck())
-            {
-                VFXSplinePointAPI.Enabled = enabled;
-                VFXSplinePointAPI.PickSizeMultiplier = pickSize;
-                VFXSplinePointAPI.LargerFirstPoint = largerFirst;
-            }
-
-            EditorGUILayout.HelpBox("单一操作模式：Unity Transform Gizmo 始终可用，用来移动整条 Spline；控制点也可直接点选和拖动。A：连续追加点，M：点菜单 / 线段插点，F：聚焦当前点，Delete：删除当前点。", MessageType.None);
         }
         private void DrawPathModeProperty(VFXSimpleSpline spline)
         {
@@ -603,8 +587,7 @@ namespace VFXTimelineSplineTool.EditorTools
             if (secondIndex >= 0 && secondIndex != firstIndex)
                 spline.selectedPointIndices.Add(secondIndex);
 
-            VFXSplinePointAPI.Enabled = true;
-            VFXSplinePointAPI.SetActiveSpline(spline);
+            VFXSplinePointAPI.EnterPointMode(spline);
             EditorUtility.SetDirty(spline);
             SceneView.RepaintAll();
         }
@@ -1402,6 +1385,7 @@ namespace VFXTimelineSplineTool.EditorTools
             anchor.forwardAxis = sourceAnimator.forwardAxis;
             anchor.rotationOffsetEuler = sourceAnimator.rotationOffsetEuler;
             anchor.fallbackForward = sourceAnimator.fallbackForward;
+            anchor.ignoreSplineTransformRotation = sourceAnimator.ignoreSplineTransformRotation;
             anchor.followSourceRotation = false;
             anchor.followSourceScale = false;
         }
@@ -1671,13 +1655,10 @@ namespace VFXTimelineSplineTool.EditorTools
             if (spline == null)
                 return;
 
-            if (VFXSplinePointAPI.IsPointEditingActive)
-                VFXSplinePointAPI.SetActiveSpline(spline);
+            if (!VFXSplinePointAPI.IsPointEditingActive)
+                VFXSplinePointAPI.EnterPointMode(spline);
             else
-            {
-                VFXSplinePointAPI.Enabled = true;
                 VFXSplinePointAPI.SetActiveSpline(spline);
-            }
             bool currentSplineOwnsMode = appendPointMode && appendPointModeSpline == spline;
             appendPointMode = !currentSplineOwnsMode;
             appendPointModeSpline = appendPointMode ? spline : null;
@@ -1700,13 +1681,10 @@ namespace VFXTimelineSplineTool.EditorTools
             if (spline == null)
                 return;
 
-            if (VFXSplinePointAPI.IsPointEditingActive)
-                VFXSplinePointAPI.SetActiveSpline(spline);
+            if (!VFXSplinePointAPI.IsPointEditingActive)
+                VFXSplinePointAPI.EnterPointMode(spline);
             else
-            {
-                VFXSplinePointAPI.Enabled = true;
                 VFXSplinePointAPI.SetActiveSpline(spline);
-            }
             int count = spline.GetActivePointCount();
             int pointIndex;
             if (TryFindNearestPointIndex(spline, count, lastSceneMousePosition, out pointIndex))
@@ -1719,6 +1697,12 @@ namespace VFXTimelineSplineTool.EditorTools
             if (TryFindNearestRawProgressOnCurve(spline, lastSceneMousePosition, out rawProgress))
             {
                 InsertPointOnCurveAtRawProgress(spline, rawProgress);
+                return;
+            }
+
+            if (count > 0)
+            {
+                ShowPointContextMenu(spline, Mathf.Clamp(spline.selectedPointIndex, 0, count - 1));
                 return;
             }
 
@@ -1867,8 +1851,6 @@ namespace VFXTimelineSplineTool.EditorTools
                 spline.selectedPointIndex = Mathf.Clamp(spline.selectedPointIndex, 0, count - 1);
             NormalizeSelectedPointIndices(spline, count);
 
-            DrawSceneStatusHint(spline, count);
-
             bool mouseNearPoint = currentEvent != null && IsMouseNearAnyPoint(spline, count, currentEvent.mousePosition);
             bool mouseNearBezierHandle = currentEvent != null && IsMouseNearVisibleBezierTangentHandle(spline, count, currentEvent.mousePosition);
             bool mouseNearMultiPointHandle = currentEvent != null && IsMouseNearMultiPointMoveHandle(spline, count, currentEvent.mousePosition);
@@ -1879,17 +1861,12 @@ namespace VFXTimelineSplineTool.EditorTools
                 else if (currentEvent.type == EventType.MouseUp || currentEvent.type == EventType.Ignore)
                     suppressObjectGizmoDuringPointDrag = false;
             }
-            Tools.hidden = suppressObjectGizmoDuringPointDrag || mouseNearPoint || mouseNearBezierHandle || mouseNearMultiPointHandle;
+            Tools.hidden = suppressObjectGizmoDuringPointDrag || mouseNearBezierHandle || mouseNearMultiPointHandle;
 
             if (VFXSplinePointAPI.HandleShortcut(Event.current, spline))
                 return;
 
-            if (!VFXSplinePointAPI.IsPointEditingActive)
-            {
-                if (appendPointModeSpline == spline)
-                    appendPointMode = false;
-                return;
-            }
+            DrawSceneStatusHint(spline, count);
 
             if (HandleAppendPointMode(spline, count))
                 return;
@@ -2787,7 +2764,7 @@ namespace VFXTimelineSplineTool.EditorTools
             }
 
             List<int> deleteIndices = GetContextDeleteIndices(spline, index);
-            string deleteLabel = deleteIndices.Count > 1 ? "点操作/删除选中的点" : "点操作/删除当前点";
+            string deleteLabel = deleteIndices.Count > 1 ? "删除选中的点" : "删除当前点";
             if (spline.GetActivePointCount() > 2 && deleteIndices.Count > 0)
             {
                 menu.AddItem(new GUIContent(deleteLabel), false, () =>

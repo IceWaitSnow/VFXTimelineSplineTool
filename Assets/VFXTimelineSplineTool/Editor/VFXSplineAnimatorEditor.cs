@@ -43,6 +43,7 @@ namespace VFXTimelineSplineTool.EditorTools
             DrawProperty("forwardAxis", "前向轴");
             DrawProperty("rotationOffsetEuler", "旋转偏移 Euler");
             DrawProperty("fallbackForward", "备用前向");
+            DrawProperty("ignoreSplineTransformRotation", "忽略 Spline 旋转");
 
             EditorGUILayout.Space(4);
             EditorGUILayout.LabelField("编辑器预览", EditorStyles.boldLabel);
@@ -220,6 +221,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 case "forwardAxis": return "指定模型哪根本地轴作为前进方向。";
                 case "rotationOffsetEuler": return "在路径方向旋转之后额外叠加的 Euler 角偏移。";
                 case "fallbackForward": return "路径切线过短时使用的备用前向方向。";
+                case "ignoreSplineTransformRotation": return "开启后，物体位置仍跟随旋转后的 Spline，但旋转计算会忽略 Spline 物体自身的 Transform 旋转。适合旋转整条路径后仍想保持卡牌朝向稳定的情况。";
                 case "editorPreviewMode": return "控制编辑模式下是否自动预览路径运动结果。";
                 case "previewInEditMode": return "旧版预览开关，保留兼容。关闭后等同于编辑器预览关闭。";
                 case "applyOnValidate": return "Inspector 参数变化时立即把当前 Progress 应用到 Transform。";
@@ -887,6 +889,7 @@ namespace VFXTimelineSplineTool.EditorTools
                     tangent = animator.fallbackForward.sqrMagnitude > 0.000001f ? animator.fallbackForward.normalized : Vector3.forward;
 
                 Vector3 normal = animator.spline.GetNormal(p, animator.useDistanceBasedProgress);
+                VFXSplineAnimator.ApplySplineRotationLock(animator.spline, animator.ignoreSplineTransformRotation, ref tangent, ref normal);
                 worldRot = animator.BuildRotation(tangent, normal) * Quaternion.Euler(animator.rotationOffsetEuler);
             }
 

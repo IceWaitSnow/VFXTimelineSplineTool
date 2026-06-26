@@ -66,6 +66,7 @@ namespace VFXTimelineSplineTool.EditorTools
             EditorGUILayout.PropertyField(t.FindPropertyRelative("rotationMode"), new GUIContent("旋转模式", "控制如何根据路径切线计算旋转。"));
             EditorGUILayout.PropertyField(t.FindPropertyRelative("forwardAxis"), new GUIContent("前向轴", "指定模型哪根本地轴作为前进方向。"));
             EditorGUILayout.PropertyField(t.FindPropertyRelative("rotationOffsetEuler"), new GUIContent("旋转偏移 Euler", "在路径方向旋转之后额外叠加的 Euler 角偏移。"));
+            EditorGUILayout.PropertyField(t.FindPropertyRelative("ignoreSplineTransformRotation"), new GUIContent("忽略 Spline 旋转", "位置仍跟随旋转后的 Spline，但旋转计算会忽略 Spline 物体自身的 Transform 旋转。"));
         }
 
         private void DrawBakeProperties()
@@ -457,6 +458,7 @@ namespace VFXTimelineSplineTool.EditorTools
                     tangent = template.fallbackForward.sqrMagnitude > 0.000001f ? template.fallbackForward.normalized : Vector3.forward;
 
                 Vector3 normal = spline.GetNormal(progress, template.useDistanceBasedProgress);
+                VFXSplineAnimator.ApplySplineRotationLock(spline, template.ignoreSplineTransformRotation, ref tangent, ref normal);
                 worldRotation = BuildRotation(template, targetTransform, tangent, normal) * Quaternion.Euler(template.rotationOffsetEuler);
             }
 

@@ -38,8 +38,6 @@ namespace VFXTimelineSplineTool.EditorTools
             VFXSimpleSpline spline = VFXSplinePointAPI.ActiveSpline;
             if (spline == null) return;
 
-            if (!VFXSplinePointAPI.Enabled) return;
-
             VFXSplinePointAPI.HandleShortcut(Event.current, spline);
 
             if (!VFXSplinePointAPI.IsPointEditingActive)
