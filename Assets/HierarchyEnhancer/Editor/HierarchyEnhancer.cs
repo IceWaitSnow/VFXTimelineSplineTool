@@ -14,6 +14,7 @@ namespace UnityTool.HierarchyEnhancer
         private const string InactiveFadeKey = "UnityTool.HierarchyEnhancer.InactiveFade";
         private const string RowStripesKey = "UnityTool.HierarchyEnhancer.RowStripes";
         private const string RowSeparatorsKey = "UnityTool.HierarchyEnhancer.RowSeparators";
+        private const string ActiveToggleKey = "UnityTool.HierarchyEnhancer.ActiveToggle";
         private const string SettingsPath = "Assets/HierarchyEnhancer/Editor/HierarchyEnhancerSettings.asset";
 
         private const string MenuRoot = "Tools/层级增强";
@@ -24,6 +25,7 @@ namespace UnityTool.HierarchyEnhancer
         private const string InactiveFadeMenu = MenuRoot + "/淡化未激活对象";
         private const string RowStripesMenu = MenuRoot + "/显示隔行底色";
         private const string RowSeparatorsMenu = MenuRoot + "/显示行分隔线";
+        private const string ActiveToggleMenu = MenuRoot + "/显示激活开关";
         private const string RepaintMenu = MenuRoot + "/刷新 Hierarchy";
         private const string MarkManagerMenu = MenuRoot + "/标记管理器";
         private const string ObjectLabelMenu = MenuRoot + "/设置选中对象标签";
@@ -46,6 +48,8 @@ namespace UnityTool.HierarchyEnhancer
         private const float BadgePadding = 6f;
         private const float BadgeGap = 3f;
         private const float ObjectIconSize = 16f;
+        private const float ActiveToggleSize = 16f;
+        private const float ActiveTogglePadding = 6f;
         private const float IndentWidth = 14f;
         private const float MarkManagerRowHeight = 58f;
 
@@ -140,6 +144,19 @@ namespace UnityTool.HierarchyEnhancer
         private static bool ValidateToggleRowSeparators()
         {
             Menu.SetChecked(RowSeparatorsMenu, ShowRowSeparators);
+            return IsEnabled;
+        }
+
+        [MenuItem(ActiveToggleMenu)]
+        private static void ToggleActiveToggle()
+        {
+            SetBool(ActiveToggleKey, !ShowActiveToggle);
+        }
+
+        [MenuItem(ActiveToggleMenu, true)]
+        private static bool ValidateToggleActiveToggle()
+        {
+            Menu.SetChecked(ActiveToggleMenu, ShowActiveToggle);
             return IsEnabled;
         }
 
@@ -380,6 +397,11 @@ namespace UnityTool.HierarchyEnhancer
             get { return EditorPrefs.GetBool(RowSeparatorsKey, true); }
         }
 
+        private static bool ShowActiveToggle
+        {
+            get { return EditorPrefs.GetBool(ActiveToggleKey, true); }
+        }
+
         private static void SetBool(string key, bool value)
         {
             EditorPrefs.SetBool(key, value);
@@ -489,13 +511,23 @@ namespace UnityTool.HierarchyEnhancer
 
         private static void OnHierarchyWindowItemGUI(int instanceId, Rect selectionRect)
         {
-            if (!IsEnabled || Event.current.type != EventType.Repaint)
+            if (!IsEnabled)
             {
                 return;
             }
 
             var gameObject = EditorUtility.InstanceIDToObject(instanceId) as GameObject;
             if (gameObject == null)
+            {
+                return;
+            }
+
+            if (ShowActiveToggle && HandleActiveToggle(selectionRect, gameObject))
+            {
+                return;
+            }
+
+            if (Event.current.type != EventType.Repaint)
             {
                 return;
             }
@@ -543,7 +575,12 @@ namespace UnityTool.HierarchyEnhancer
                 DrawRowSeparator(selectionRect);
             }
 
-            DrawBadges(selectionRect, gameObject, isSelected, settings);
+            DrawBadges(selectionRect, gameObject, isSelected, settings, ShowActiveToggle);
+
+            if (ShowActiveToggle)
+            {
+                DrawActiveToggle(selectionRect, gameObject);
+            }
         }
 
         private static bool IsSelected(GameObject gameObject)
@@ -558,6 +595,36 @@ namespace UnityTool.HierarchyEnhancer
             }
 
             return false;
+        }
+
+        private static bool HandleActiveToggle(Rect rowRect, GameObject gameObject)
+        {
+            var toggleRect = GetActiveToggleRect(rowRect);
+            EditorGUIUtility.AddCursorRect(toggleRect, MouseCursor.Link);
+
+            var currentEvent = Event.current;
+            if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0 && toggleRect.Contains(currentEvent.mousePosition))
+            {
+                Undo.RecordObject(gameObject, "Toggle Active State");
+                gameObject.SetActive(!gameObject.activeSelf);
+                EditorUtility.SetDirty(gameObject);
+                EditorApplication.RepaintHierarchyWindow();
+                currentEvent.Use();
+                return true;
+            }
+
+            return false;
+        }
+
+        private static void DrawActiveToggle(Rect rowRect, GameObject gameObject)
+        {
+            EditorGUI.Toggle(GetActiveToggleRect(rowRect), gameObject.activeSelf);
+        }
+
+        private static Rect GetActiveToggleRect(Rect rowRect)
+        {
+            var y = rowRect.y + Mathf.Floor((rowRect.height - ActiveToggleSize) * 0.5f);
+            return new Rect(rowRect.xMax - ActiveToggleSize - ActiveTogglePadding, y, ActiveToggleSize, ActiveToggleSize);
         }
 
         private static void DrawRowStripe(Rect rect, int siblingIndex)
@@ -614,7 +681,7 @@ namespace UnityTool.HierarchyEnhancer
             return depth;
         }
 
-        private static void DrawBadges(Rect rect, GameObject gameObject, bool isSelected, HierarchyEnhancerSettings settings)
+        private static void DrawBadges(Rect rect, GameObject gameObject, bool isSelected, HierarchyEnhancerSettings settings, bool reserveActiveToggle)
         {
             var contents = CollectBadgeContents(gameObject, ShowBadges, settings);
             var objectIcon = GetObjectIcon(gameObject);
@@ -625,7 +692,7 @@ namespace UnityTool.HierarchyEnhancer
 
             EnsureStyles();
 
-            var right = rect.xMax - 4f;
+            var right = rect.xMax - 4f - (reserveActiveToggle ? ActiveToggleSize + ActiveTogglePadding * 2f : 0f);
             var y = rect.y + Mathf.Floor((rect.height - BadgeHeight) * 0.5f);
             if (objectIcon != null)
             {
@@ -1987,6 +2054,11 @@ namespace UnityTool.HierarchyEnhancer
                         DrawPreferenceToggle("行分隔线", RowSeparatorsKey, ShowRowSeparators);
                         DrawPreferenceToggle("隔行底色", RowStripesKey, ShowRowStripes);
                         DrawPreferenceToggle("淡化未激活", InactiveFadeKey, FadeInactive);
+                    }
+
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        DrawPreferenceToggle("激活开关", ActiveToggleKey, ShowActiveToggle);
                     }
 
                     using (new EditorGUILayout.HorizontalScope())

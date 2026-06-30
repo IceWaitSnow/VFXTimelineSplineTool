@@ -109,6 +109,14 @@ MonoBehaviour:
     textColor: {r: 1, g: 0.78, b: 0.22, a: 1}
     useRowColor: 1
     rowColor: {r: 1, g: 0.64, b: 0.12, a: 0.24}
+  - objectId: GlobalObjectId_V1-2-40ce871fa67a37d4da4b6d352aeb10ee-254138313-0
+    objectName: VFX Simple Spline Path
+    label: 123
+    bookmarked: 0
+    useTextColor: 1
+    textColor: {r: 1, g: 0.28, b: 0.22, a: 1}
+    useRowColor: 1
+    rowColor: {r: 1, g: 0.22, b: 0.15, a: 0.28}
   styleTemplates:
   - name: "\u7EA2\u8272\u7C92\u5B50"
     label: "\u7EA2\u8272\u7C92\u5B50"
