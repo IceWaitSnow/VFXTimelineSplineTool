@@ -34,7 +34,6 @@ namespace VFXTimelineSplineTool.EditorTools
             DrawProperty("segments", "路径细分");
             DrawShapeSettings(strip);
             DrawProperty("doubleSided", "双面三角面");
-            DrawProperty("material", "材质");
             DrawPointWidthControls(strip);
             DrawPointTwistControls(strip);
 
@@ -189,7 +188,6 @@ namespace VFXTimelineSplineTool.EditorTools
                 case "customShapeClosed": return "开启后会连接自定义截面的最后一个点和第一个点，形成闭合截面。";
                 case "customShapePoints": return "自定义 2D 截面点。X 表示横向，Y 表示法线方向，数值会乘以宽度后沿路径扫描生成 Mesh。";
                 case "doubleSided": return "生成正反两面的三角面。材质不支持双面显示时可以开启，但三角面数量会翻倍。";
-                case "material": return "赋给生成面片 MeshRenderer 的材质。";
                 case "usePointWidthMultipliers": return "开启后，每个 Spline 控制点都可以设置一个宽度倍率，用来控制局部变粗或变细。";
                 case "smoothPointWidth": return "开启后，控制点之间的宽度倍率会平滑过渡；关闭后使用线性过渡。";
                 case "usePointTwistDegrees": return "开启后，每个 Spline 控制点都可以设置一个截面旋转角度，用来控制面片翻转或扭转。";
@@ -330,12 +328,8 @@ namespace VFXTimelineSplineTool.EditorTools
             bakedObject.transform.localScale = strip.transform.localScale;
 
             MeshFilter filter = bakedObject.AddComponent<MeshFilter>();
-            MeshRenderer renderer = bakedObject.AddComponent<MeshRenderer>();
+            bakedObject.AddComponent<MeshRenderer>();
             filter.sharedMesh = bakedMesh;
-
-            MeshRenderer sourceRenderer = strip.GetComponent<MeshRenderer>();
-            if (sourceRenderer != null)
-                renderer.sharedMaterials = sourceRenderer.sharedMaterials;
 
             Selection.activeGameObject = bakedObject;
         }
@@ -371,6 +365,12 @@ namespace VFXTimelineSplineTool.EditorTools
             if (string.IsNullOrEmpty(path))
                 return;
 
+            if (AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path) != null)
+            {
+                AssetDatabase.DeleteAsset(path);
+                AssetDatabase.Refresh();
+            }
+
             GameObject exportObject = null;
             Mesh exportMesh = null;
             try
@@ -385,14 +385,10 @@ namespace VFXTimelineSplineTool.EditorTools
                 exportMesh.hideFlags = HideFlags.HideAndDontSave;
 
                 MeshFilter exportFilter = exportObject.AddComponent<MeshFilter>();
-                MeshRenderer exportRenderer = exportObject.AddComponent<MeshRenderer>();
                 exportFilter.sharedMesh = exportMesh;
 
-                MeshRenderer sourceRenderer = strip.GetComponent<MeshRenderer>();
-                if (sourceRenderer != null)
-                    exportRenderer.sharedMaterials = sourceRenderer.sharedMaterials;
-
                 exportMethod.Invoke(null, new object[] { path, exportObject });
+                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
                 AssetDatabase.Refresh();
 
                 UnityEngine.Object exportedAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
@@ -453,6 +449,7 @@ namespace VFXTimelineSplineTool.EditorTools
 
             return null;
         }
+
     }
 }
 #endif

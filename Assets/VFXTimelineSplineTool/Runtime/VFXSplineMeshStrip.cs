@@ -44,7 +44,6 @@ namespace VFXTimelineSplineTool
             new Vector2(0.5f, 0f)
         };
         public bool doubleSided = false;
-        public Material material;
         public bool usePointWidthMultipliers = false;
         public bool smoothPointWidth = true;
         public List<float> pointWidthMultipliers = new List<float>();
@@ -66,7 +65,6 @@ namespace VFXTimelineSplineTool
 
         private const string GeneratedMeshName = "VFX Spline Mesh Strip";
         private MeshFilter meshFilter;
-        private MeshRenderer meshRenderer;
         private Mesh generatedMesh;
         private Vector2 runtimeUvOffset;
 
@@ -112,8 +110,6 @@ namespace VFXTimelineSplineTool
             widthSegments = Mathf.Clamp(widthSegments, 1, 64);
             tubeSegments = Mathf.Clamp(tubeSegments, 3, 64);
             width = Mathf.Max(0.001f, width);
-            if (enabled && (Application.isPlaying || rebuildInEditMode))
-                RebuildMesh();
         }
 
         private void LateUpdate()
@@ -137,9 +133,6 @@ namespace VFXTimelineSplineTool
         {
             CacheComponents();
             EnsureMesh();
-
-            if (meshRenderer != null && material != null)
-                meshRenderer.sharedMaterial = material;
 
             if (generatedMesh == null)
                 return;
@@ -470,8 +463,6 @@ namespace VFXTimelineSplineTool
         {
             if (meshFilter == null)
                 meshFilter = GetComponent<MeshFilter>();
-            if (meshRenderer == null)
-                meshRenderer = GetComponent<MeshRenderer>();
         }
 
         private void EnsureMesh()
