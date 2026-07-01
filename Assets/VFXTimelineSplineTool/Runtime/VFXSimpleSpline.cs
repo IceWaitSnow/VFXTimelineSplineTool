@@ -221,6 +221,11 @@ namespace VFXTimelineSplineTool
         public bool dynamicUpdateInEditMode = true;
         [Tooltip("Scene 视图中显示动态绑定端点的标签。") ]
         public bool showDynamicBindingLabels = true;
+        public bool showDynamicBindingInfluence = true;
+        [Range(0f, 1f)] public float dynamicStartInfluenceRange = 0f;
+        public AnimationCurve dynamicStartInfluenceFalloff = AnimationCurve.EaseInOut(0f, 1f, 1f, 0f);
+        [Range(0f, 1f)] public float dynamicEndInfluenceRange = 0f;
+        public AnimationCurve dynamicEndInfluenceFalloff = AnimationCurve.EaseInOut(0f, 1f, 1f, 0f);
 
         [Header("距离等速 Progress")]
         [Range(32, 2048)] public int distanceSampleResolution = 256;
@@ -268,6 +273,9 @@ namespace VFXTimelineSplineTool
             normalCount = Mathf.Clamp(normalCount, 1, 128);
             arrowSize = Mathf.Max(0.01f, arrowSize);
             normalLength = Mathf.Max(0.01f, normalLength);
+            dynamicStartInfluenceRange = Mathf.Clamp01(dynamicStartInfluenceRange);
+            dynamicEndInfluenceRange = Mathf.Clamp01(dynamicEndInfluenceRange);
+            EnsureDynamicBindingCurves();
             MarkDistanceCacheDirty();
         }
 
@@ -616,13 +624,7 @@ namespace VFXTimelineSplineTool
             index = Mathf.Clamp(index, 0, localPoints.Count - 1);
 
             if (enableDynamicStartEndBinding)
-            {
-                if (index == 0 && dynamicStartTransform != null)
-                    return transform.InverseTransformPoint(dynamicStartTransform.position);
-
-                if (index == localPoints.Count - 1 && dynamicEndTransform != null)
-                    return transform.InverseTransformPoint(dynamicEndTransform.position);
-            }
+                return ApplyDynamicBindingInfluence(index, localPoints.Count, localPoints[index]);
 
             return localPoints[index];
         }
@@ -632,17 +634,9 @@ namespace VFXTimelineSplineTool
             if (bezierPoints == null || bezierPoints.Count == 0) return Vector3.zero;
             index = Mathf.Clamp(index, 0, bezierPoints.Count - 1);
 
-            if (enableDynamicStartEndBinding)
-            {
-                if (index == 0 && dynamicStartTransform != null)
-                    return transform.InverseTransformPoint(dynamicStartTransform.position);
-
-                if (index == bezierPoints.Count - 1 && dynamicEndTransform != null)
-                    return transform.InverseTransformPoint(dynamicEndTransform.position);
-            }
-
             VFXBezierPoint point = bezierPoints[index];
-            return point != null ? point.position : Vector3.zero;
+            Vector3 position = point != null ? point.position : Vector3.zero;
+            return enableDynamicStartEndBinding ? ApplyDynamicBindingInfluence(index, bezierPoints.Count, position) : position;
         }
 
         public Vector3 GetEffectiveWorldPoint(int index)
@@ -677,22 +671,30 @@ namespace VFXTimelineSplineTool
                     EnsureBezierPoints();
                     if (bezierPoints.Count < 2) return;
 
-                    if (dynamicStartTransform != null)
-                        bezierPoints[0].position = transform.InverseTransformPoint(dynamicStartTransform.position);
+                    Vector3[] bakedPositions = new Vector3[bezierPoints.Count];
+                    for (int i = 0; i < bakedPositions.Length; i++)
+                    {
+                        Vector3 position = bezierPoints[i] != null ? bezierPoints[i].position : Vector3.zero;
+                        bakedPositions[i] = ApplyDynamicBindingInfluence(i, bakedPositions.Length, position);
+                    }
 
-                    if (dynamicEndTransform != null)
-                        bezierPoints[bezierPoints.Count - 1].position = transform.InverseTransformPoint(dynamicEndTransform.position);
+                    for (int i = 0; i < bakedPositions.Length; i++)
+                    {
+                        if (bezierPoints[i] != null)
+                            bezierPoints[i].position = bakedPositions[i];
+                    }
                 }
                 else
                 {
                     EnsureLocalPoints();
                     if (localPoints.Count < 2) return;
 
-                    if (dynamicStartTransform != null)
-                        localPoints[0] = transform.InverseTransformPoint(dynamicStartTransform.position);
+                    Vector3[] bakedPositions = new Vector3[localPoints.Count];
+                    for (int i = 0; i < bakedPositions.Length; i++)
+                        bakedPositions[i] = ApplyDynamicBindingInfluence(i, bakedPositions.Length, localPoints[i]);
 
-                    if (dynamicEndTransform != null)
-                        localPoints[localPoints.Count - 1] = transform.InverseTransformPoint(dynamicEndTransform.position);
+                    for (int i = 0; i < bakedPositions.Length; i++)
+                        localPoints[i] = bakedPositions[i];
                 }
             }
 
@@ -719,6 +721,72 @@ namespace VFXTimelineSplineTool
                 lastDynamicEndWorld = end;
                 hasLastDynamicWorld = true;
             }
+        }
+
+        private void EnsureDynamicBindingCurves()
+        {
+            if (dynamicStartInfluenceFalloff == null)
+                dynamicStartInfluenceFalloff = AnimationCurve.EaseInOut(0f, 1f, 1f, 0f);
+            if (dynamicEndInfluenceFalloff == null)
+                dynamicEndInfluenceFalloff = AnimationCurve.EaseInOut(0f, 1f, 1f, 0f);
+        }
+
+        private Vector3 ApplyDynamicBindingInfluence(int index, int count, Vector3 basePosition)
+        {
+            if (!enableDynamicStartEndBinding || count <= 0)
+                return basePosition;
+
+            EnsureDynamicBindingCurves();
+
+            Vector3 position = basePosition;
+            float progress = count <= 1 ? 0f : index / (float)(count - 1);
+
+            if (dynamicStartTransform != null)
+            {
+                Vector3 boundStart = transform.InverseTransformPoint(dynamicStartTransform.position);
+                Vector3 startDelta = boundStart - GetBaseDynamicBindingPoint(0, count);
+                float startWeight = GetDynamicBindingInfluenceWeight(progress, dynamicStartInfluenceRange, dynamicStartInfluenceFalloff);
+                position += startDelta * startWeight;
+            }
+
+            if (dynamicEndTransform != null)
+            {
+                Vector3 boundEnd = transform.InverseTransformPoint(dynamicEndTransform.position);
+                Vector3 endDelta = boundEnd - GetBaseDynamicBindingPoint(count - 1, count);
+                float endDistance = 1f - progress;
+                float endWeight = GetDynamicBindingInfluenceWeight(endDistance, dynamicEndInfluenceRange, dynamicEndInfluenceFalloff);
+                position += endDelta * endWeight;
+            }
+
+            return position;
+        }
+
+        private Vector3 GetBaseDynamicBindingPoint(int index, int count)
+        {
+            index = Mathf.Clamp(index, 0, Mathf.Max(0, count - 1));
+            if (pathMode == VFXSplinePathMode.Bezier)
+            {
+                if (bezierPoints == null || index >= bezierPoints.Count || bezierPoints[index] == null)
+                    return Vector3.zero;
+                return bezierPoints[index].position;
+            }
+
+            if (localPoints == null || index >= localPoints.Count)
+                return Vector3.zero;
+            return localPoints[index];
+        }
+
+        private static float GetDynamicBindingInfluenceWeight(float endpointDistance, float range, AnimationCurve falloff)
+        {
+            endpointDistance = Mathf.Clamp01(endpointDistance);
+            range = Mathf.Clamp01(range);
+            if (endpointDistance <= 0.000001f)
+                return 1f;
+            if (range <= 0.000001f || endpointDistance > range)
+                return 0f;
+
+            float t = Mathf.Clamp01(endpointDistance / range);
+            return Mathf.Clamp01(falloff != null ? falloff.Evaluate(t) : 1f - t);
         }
 
         public Vector3 GetLocalPoint(float progress, bool distanceBased)

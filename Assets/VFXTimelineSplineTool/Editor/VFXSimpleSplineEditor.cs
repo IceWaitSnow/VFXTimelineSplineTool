@@ -57,6 +57,7 @@ namespace VFXTimelineSplineTool.EditorTools
         private static int presetPointCount = 12;
         private static int presetWaveCount = 2;
         private static float presetSpiralTurns = 1.5f;
+        private static float presetCircleDegrees = 360f;
         private static bool livePreviewShapePreset = false;
 
         private const string UserPresetFolder = "Assets/VFXTimelineSplineTool/UserPresets";
@@ -115,6 +116,11 @@ namespace VFXTimelineSplineTool.EditorTools
                 DrawProperty("dynamicEndTransform", "终点 Transform");
                 DrawProperty("dynamicUpdateInEditMode", "编辑模式实时更新");
                 DrawProperty("showDynamicBindingLabels", "显示绑定标签");
+                DrawProperty("showDynamicBindingInfluence", "Show Influence Circles");
+                DrawProperty("dynamicStartInfluenceRange", "Start Influence Range");
+                DrawProperty("dynamicStartInfluenceFalloff", "Start Influence Falloff");
+                DrawProperty("dynamicEndInfluenceRange", "End Influence Range");
+                DrawProperty("dynamicEndInfluenceFalloff", "End Influence Falloff");
 
                 using (new EditorGUILayout.HorizontalScope())
                 {
@@ -783,6 +789,8 @@ namespace VFXTimelineSplineTool.EditorTools
             presetPointCount = EditorGUILayout.IntSlider(new GUIContent("控制点数量", "生成点数量。圆、波浪、螺旋等形状建议 8 到 24。"), presetPointCount, 4, 64);
             presetWaveCount = EditorGUILayout.IntSlider(new GUIContent("波段数量", "Wave / Zigzag 的波段数量。"), presetWaveCount, 1, 8);
             presetSpiralTurns = EditorGUILayout.Slider(new GUIContent("螺旋圈数", "Spiral 形状的圈数。"), presetSpiralTurns, 0.5f, 5f);
+            if (UsesCircleDegrees(selectedShapePreset))
+                presetCircleDegrees = EditorGUILayout.Slider(new GUIContent("圆弧角度", "Circle / Ring / Ellipse 的生成角度。360 为完整闭合，180 为半圆。"), presetCircleDegrees, 1f, 360f);
             presetRotationY = EditorGUILayout.FloatField(new GUIContent("Y 轴旋转", "绕 Y 轴旋转预设形状。"), presetRotationY);
             presetOffset = EditorGUILayout.Vector3Field(new GUIContent("Local 偏移", "生成后在 Spline 本地空间中的偏移。"), presetOffset);
             livePreviewShapePreset = EditorGUILayout.Toggle(new GUIContent("实时预览形状预设", "开启后，修改上方参数会立即刷新当前路径。注意：这会持续覆盖 Local Points。"), livePreviewShapePreset);
@@ -811,6 +819,7 @@ namespace VFXTimelineSplineTool.EditorTools
                     presetPointCount = 12;
                     presetWaveCount = 2;
                     presetSpiralTurns = 1.5f;
+                    presetCircleDegrees = 360f;
                     if (livePreviewShapePreset)
                         ApplyShapePresetToSpline(spline, "Reset Shape Preset Params");
                 }
@@ -851,6 +860,7 @@ namespace VFXTimelineSplineTool.EditorTools
                 case ShapePreset.Circle:
                 case ShapePreset.Ring:
                 case ShapePreset.Ellipse:
+                    return IsFullCircleDegrees();
                 case ShapePreset.Square:
                 case ShapePreset.Rectangle:
                 case ShapePreset.Triangle:
@@ -877,6 +887,16 @@ namespace VFXTimelineSplineTool.EditorTools
                 default:
                     return false;
             }
+        }
+
+        private static bool UsesCircleDegrees(ShapePreset preset)
+        {
+            return preset == ShapePreset.Circle || preset == ShapePreset.Ring || preset == ShapePreset.Ellipse;
+        }
+
+        private static bool IsFullCircleDegrees()
+        {
+            return presetCircleDegrees >= 359.99f;
         }
 
         private static void ApplyCornerToAllBezierPoints(VFXSimpleSpline spline)
@@ -963,15 +983,15 @@ namespace VFXTimelineSplineTool.EditorTools
                 }
 
                 case ShapePreset.Circle:
-                    AddClosedParametric(pts, count, t => new Vector3(Mathf.Cos(t * Mathf.PI * 2f) * s, 0f, Mathf.Sin(t * Mathf.PI * 2f) * s));
+                    AddCircleParametric(pts, count, t => new Vector3(Mathf.Cos(t * Mathf.PI * 2f) * s, 0f, Mathf.Sin(t * Mathf.PI * 2f) * s));
                     break;
 
                 case ShapePreset.Ring:
-                    AddClosedParametric(pts, Mathf.Max(16, count), t => new Vector3(Mathf.Cos(t * Mathf.PI * 2f) * s, 0f, Mathf.Sin(t * Mathf.PI * 2f) * s));
+                    AddCircleParametric(pts, Mathf.Max(16, count), t => new Vector3(Mathf.Cos(t * Mathf.PI * 2f) * s, 0f, Mathf.Sin(t * Mathf.PI * 2f) * s));
                     break;
 
                 case ShapePreset.Ellipse:
-                    AddClosedParametric(pts, count, t => new Vector3(Mathf.Cos(t * Mathf.PI * 2f) * w, 0f, Mathf.Sin(t * Mathf.PI * 2f) * h));
+                    AddCircleParametric(pts, count, t => new Vector3(Mathf.Cos(t * Mathf.PI * 2f) * w, 0f, Mathf.Sin(t * Mathf.PI * 2f) * h));
                     break;
 
                 case ShapePreset.Square:
@@ -1089,6 +1109,25 @@ namespace VFXTimelineSplineTool.EditorTools
             {
                 float t = i / (float)count;
                 pts.Add(func(t));
+            }
+        }
+
+        private static void AddCircleParametric(List<Vector3> pts, int count, System.Func<float, Vector3> func)
+        {
+            count = Mathf.Max(4, count);
+            float degrees = Mathf.Clamp(presetCircleDegrees, 1f, 360f);
+            if (degrees >= 359.99f)
+            {
+                AddClosedParametric(pts, count, func);
+                return;
+            }
+
+            int openCount = Mathf.Max(2, count);
+            float progressScale = degrees / 360f;
+            for (int i = 0; i < openCount; i++)
+            {
+                float t = openCount <= 1 ? 0f : i / (float)(openCount - 1);
+                pts.Add(func(t * progressScale));
             }
         }
 
@@ -1878,6 +1917,8 @@ namespace VFXTimelineSplineTool.EditorTools
             if (hasMultiSelection)
                 DrawMultiPointMoveHandle(spline, count);
 
+            DrawDynamicBindingInfluencePreview(spline, count);
+
             for (int i = 0; i < count; i++)
             {
                 Vector3 world = spline.GetEffectiveWorldPoint(i);
@@ -1951,6 +1992,96 @@ namespace VFXTimelineSplineTool.EditorTools
             }
 
             TryForceSelectNearestPoint(spline, count);
+        }
+
+        private static void DrawDynamicBindingInfluencePreview(VFXSimpleSpline spline, int count)
+        {
+            if (spline == null || !spline.enableDynamicStartEndBinding || !spline.showDynamicBindingInfluence || count < 2)
+                return;
+
+            bool hasStart = spline.dynamicStartTransform != null && spline.dynamicStartInfluenceRange > 0.0001f;
+            bool hasEnd = spline.dynamicEndTransform != null && spline.dynamicEndInfluenceRange > 0.0001f;
+            if (!hasStart && !hasEnd)
+                return;
+
+            Vector3 cameraNormal = GetSceneCameraNormal();
+            for (int i = 0; i < count; i++)
+            {
+                float progress = i / (float)(count - 1);
+                float startWeight = hasStart ? GetDynamicPreviewWeight(progress, spline.dynamicStartInfluenceRange, spline.dynamicStartInfluenceFalloff) : 0f;
+                float endWeight = hasEnd ? GetDynamicPreviewWeight(1f - progress, spline.dynamicEndInfluenceRange, spline.dynamicEndInfluenceFalloff) : 0f;
+                if (startWeight < 0.05f && endWeight < 0.05f)
+                    continue;
+
+                Vector3 baseWorld = GetBaseControlPointWorld(spline, i);
+                Vector3 effectiveWorld = spline.GetEffectiveWorldPoint(i);
+                float handleSize = HandleUtility.GetHandleSize(effectiveWorld) * spline.pointSize;
+
+                if (startWeight >= 0.05f)
+                    DrawDynamicInfluenceRing(effectiveWorld, cameraNormal, handleSize, startWeight, true);
+
+                if (endWeight >= 0.05f)
+                    DrawDynamicInfluenceRing(effectiveWorld, cameraNormal, handleSize, endWeight, false);
+
+                float weight = Mathf.Max(startWeight, endWeight);
+                if ((effectiveWorld - baseWorld).sqrMagnitude > 0.000001f)
+                {
+                    Handles.color = new Color(1f, 1f, 1f, Mathf.Lerp(0.45f, 0.9f, weight));
+                    Handles.DrawAAPolyLine(Mathf.Lerp(1f, 3f, weight), baseWorld, effectiveWorld);
+                }
+            }
+        }
+
+        private static void DrawDynamicInfluenceRing(Vector3 center, Vector3 normal, float handleSize, float weight, bool isStart)
+        {
+            Color color = isStart ? new Color(0f, 1f, 0.18f, 0.78f) : new Color(0f, 0.65f, 1f, 0.78f);
+            float baseRadius = isStart ? 2.25f : 1.55f;
+            float radius = handleSize * (baseRadius + weight * 1.4f);
+            float lineWidth = Mathf.Lerp(1.5f, 4f, weight);
+
+            Handles.color = color;
+            Handles.DrawWireDisc(center, normal, radius, lineWidth);
+        }
+
+        private static Vector3 GetBaseControlPointWorld(VFXSimpleSpline spline, int index)
+        {
+            if (spline == null)
+                return Vector3.zero;
+
+            if (spline.pathMode == VFXSplinePathMode.Bezier)
+            {
+                if (spline.bezierPoints == null || index < 0 || index >= spline.bezierPoints.Count || spline.bezierPoints[index] == null)
+                    return spline.transform.position;
+
+                return spline.transform.TransformPoint(spline.bezierPoints[index].position);
+            }
+
+            if (spline.localPoints == null || index < 0 || index >= spline.localPoints.Count)
+                return spline.transform.position;
+
+            return spline.transform.TransformPoint(spline.localPoints[index]);
+        }
+
+        private static float GetDynamicPreviewWeight(float endpointDistance, float range, AnimationCurve falloff)
+        {
+            endpointDistance = Mathf.Clamp01(endpointDistance);
+            range = Mathf.Clamp01(range);
+            if (endpointDistance <= 0.000001f)
+                return 1f;
+            if (range <= 0.000001f || endpointDistance > range)
+                return 0f;
+
+            float t = Mathf.Clamp01(endpointDistance / range);
+            return Mathf.Clamp01(falloff != null ? falloff.Evaluate(t) : 1f - t);
+        }
+
+        private static Vector3 GetSceneCameraNormal()
+        {
+            SceneView sceneView = SceneView.currentDrawingSceneView;
+            if (sceneView != null && sceneView.camera != null)
+                return sceneView.camera.transform.forward;
+
+            return Vector3.up;
         }
 
         private static bool TryForceSelectNearestPoint(VFXSimpleSpline spline, int count)

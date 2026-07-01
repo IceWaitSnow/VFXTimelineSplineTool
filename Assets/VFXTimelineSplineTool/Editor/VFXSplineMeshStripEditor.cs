@@ -125,6 +125,16 @@ namespace VFXTimelineSplineTool.EditorTools
             property.enumValueIndex = EditorGUILayout.Popup(content, property.enumValueIndex, labels);
         }
 
+        private void DrawControlModeProperty(string propertyName, string label)
+        {
+            SerializedProperty property = serializedObject.FindProperty(propertyName);
+            if (property == null)
+                return;
+
+            string[] labels = { "Points", "Curve" };
+            property.enumValueIndex = EditorGUILayout.Popup(new GUIContent(label, GetPropertyTooltip(propertyName)), property.enumValueIndex, labels);
+        }
+
         private void DrawShapeSettings(VFXSplineMeshStrip strip)
         {
             SerializedProperty shapeModeProperty = serializedObject.FindProperty("shapeMode");
@@ -210,6 +220,17 @@ namespace VFXTimelineSplineTool.EditorTools
             if (enabledProperty == null || !enabledProperty.boolValue)
                 return;
 
+            DrawControlModeProperty("widthControlMode", "Width Control Mode");
+
+            SerializedProperty modeProperty = serializedObject.FindProperty("widthControlMode");
+            bool useCurve = modeProperty != null && modeProperty.enumValueIndex == (int)VFXSplineMeshStripControlMode.Curve;
+            if (useCurve)
+            {
+                DrawProperty("widthMultiplierCurve", "Width Curve");
+                DrawWidthCurvePresetButtons(strip);
+                return;
+            }
+
             DrawProperty("smoothPointWidth", "平滑宽度过渡");
 
             SerializedProperty multipliers = serializedObject.FindProperty("pointWidthMultipliers");
@@ -252,6 +273,17 @@ namespace VFXTimelineSplineTool.EditorTools
             if (enabledProperty == null || !enabledProperty.boolValue)
                 return;
 
+            DrawControlModeProperty("twistControlMode", "Twist Control Mode");
+
+            SerializedProperty modeProperty = serializedObject.FindProperty("twistControlMode");
+            bool useCurve = modeProperty != null && modeProperty.enumValueIndex == (int)VFXSplineMeshStripControlMode.Curve;
+            if (useCurve)
+            {
+                DrawProperty("twistDegreesCurve", "Twist Curve");
+                DrawTwistCurvePresetButtons(strip);
+                return;
+            }
+
             DrawProperty("smoothPointTwist", "平滑旋转过渡");
 
             SerializedProperty twists = serializedObject.FindProperty("pointTwistDegrees");
@@ -282,6 +314,66 @@ namespace VFXTimelineSplineTool.EditorTools
                     EditorGUILayout.PropertyField(value, new GUIContent("P" + i + " 旋转角度", "控制点 P" + i + " 附近的截面扭转角度，单位为度。正负值会绕路径切线反向旋转。"));
                 }
             }
+        }
+
+        private void DrawWidthCurvePresetButtons(VFXSplineMeshStrip strip)
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Constant"))
+                    ApplyCurvePreset(strip, "widthMultiplierCurve", AnimationCurve.Linear(0f, 1f, 1f, 1f), "Set Width Curve Constant");
+                if (GUILayout.Button("Fade In"))
+                    ApplyCurvePreset(strip, "widthMultiplierCurve", AnimationCurve.EaseInOut(0f, 0f, 1f, 1f), "Set Width Curve Fade In");
+                if (GUILayout.Button("Fade Out"))
+                    ApplyCurvePreset(strip, "widthMultiplierCurve", AnimationCurve.EaseInOut(0f, 1f, 1f, 0f), "Set Width Curve Fade Out");
+                if (GUILayout.Button("Taper Ends"))
+                    ApplyCurvePreset(strip, "widthMultiplierCurve", CreateSmoothCurve(0f, 0f, 0.2f, 1f, 0.8f, 1f, 1f, 0f), "Set Width Curve Taper Ends");
+            }
+        }
+
+        private void DrawTwistCurvePresetButtons(VFXSplineMeshStrip strip)
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Reset"))
+                    ApplyCurvePreset(strip, "twistDegreesCurve", AnimationCurve.Linear(0f, 0f, 1f, 0f), "Reset Twist Curve");
+                if (GUILayout.Button("Half Turn"))
+                    ApplyCurvePreset(strip, "twistDegreesCurve", AnimationCurve.Linear(0f, 0f, 1f, 180f), "Set Twist Curve Half Turn");
+                if (GUILayout.Button("Full Turn"))
+                    ApplyCurvePreset(strip, "twistDegreesCurve", AnimationCurve.Linear(0f, 0f, 1f, 360f), "Set Twist Curve Full Turn");
+                if (GUILayout.Button("Twist Back"))
+                    ApplyCurvePreset(strip, "twistDegreesCurve", CreateSmoothCurve(0f, 0f, 0.5f, 180f, 1f, 0f), "Set Twist Curve Back");
+            }
+        }
+
+        private void ApplyCurvePreset(VFXSplineMeshStrip strip, string propertyName, AnimationCurve curve, string undoName)
+        {
+            if (strip == null)
+                return;
+
+            SerializedProperty property = serializedObject.FindProperty(propertyName);
+            if (property == null)
+                return;
+
+            Undo.RecordObject(strip, undoName);
+            property.animationCurveValue = curve;
+            serializedObject.ApplyModifiedProperties();
+            strip.RebuildMesh();
+            EditorUtility.SetDirty(strip);
+            serializedObject.Update();
+            SceneView.RepaintAll();
+        }
+
+        private static AnimationCurve CreateSmoothCurve(params float[] values)
+        {
+            AnimationCurve curve = new AnimationCurve();
+            for (int i = 0; i + 1 < values.Length; i += 2)
+                curve.AddKey(values[i], values[i + 1]);
+
+            for (int i = 0; i < curve.length; i++)
+                curve.SmoothTangents(i, 0f);
+
+            return curve;
         }
 
         private static void BakeMeshAsset(VFXSplineMeshStrip strip, bool createObject)

@@ -17,6 +17,12 @@ namespace VFXTimelineSplineTool
         Custom
     }
 
+    public enum VFXSplineMeshStripControlMode
+    {
+        Points,
+        Curve
+    }
+
     [ExecuteAlways]
     [DisallowMultipleComponent]
     [RequireComponent(typeof(MeshFilter))]
@@ -45,9 +51,13 @@ namespace VFXTimelineSplineTool
         };
         public bool doubleSided = false;
         public bool usePointWidthMultipliers = false;
+        public VFXSplineMeshStripControlMode widthControlMode = VFXSplineMeshStripControlMode.Points;
+        public AnimationCurve widthMultiplierCurve = AnimationCurve.Linear(0f, 1f, 1f, 1f);
         public bool smoothPointWidth = true;
         public List<float> pointWidthMultipliers = new List<float>();
         public bool usePointTwistDegrees = false;
+        public VFXSplineMeshStripControlMode twistControlMode = VFXSplineMeshStripControlMode.Points;
+        public AnimationCurve twistDegreesCurve = AnimationCurve.Linear(0f, 0f, 1f, 0f);
         public bool smoothPointTwist = true;
         public List<float> pointTwistDegrees = new List<float>();
 
@@ -110,6 +120,7 @@ namespace VFXTimelineSplineTool
             widthSegments = Mathf.Clamp(widthSegments, 1, 64);
             tubeSegments = Mathf.Clamp(tubeSegments, 3, 64);
             width = Mathf.Max(0.001f, width);
+            EnsureCurves();
         }
 
         private void LateUpdate()
@@ -143,10 +154,11 @@ namespace VFXTimelineSplineTool
                 return;
             }
 
-            if (usePointWidthMultipliers)
+            if (usePointWidthMultipliers && widthControlMode == VFXSplineMeshStripControlMode.Points)
                 SyncPointWidthMultipliers();
-            if (usePointTwistDegrees)
+            if (usePointTwistDegrees && twistControlMode == VFXSplineMeshStripControlMode.Points)
                 SyncPointTwistDegrees();
+            EnsureCurves();
 
             int sampleCount = segments + 1;
             Vector3[] worldPositions = new Vector3[sampleCount];
@@ -319,6 +331,14 @@ namespace VFXTimelineSplineTool
 
             while (pointTwistDegrees.Count > pointCount)
                 pointTwistDegrees.RemoveAt(pointTwistDegrees.Count - 1);
+        }
+
+        private void EnsureCurves()
+        {
+            if (widthMultiplierCurve == null)
+                widthMultiplierCurve = AnimationCurve.Linear(0f, 1f, 1f, 1f);
+            if (twistDegreesCurve == null)
+                twistDegreesCurve = AnimationCurve.Linear(0f, 0f, 1f, 0f);
         }
 
         public void ResetCustomShapeToPlane()
@@ -513,6 +533,12 @@ namespace VFXTimelineSplineTool
             if (!usePointWidthMultipliers || spline == null)
                 return 1f;
 
+            if (widthControlMode == VFXSplineMeshStripControlMode.Curve)
+            {
+                EnsureCurves();
+                return Mathf.Max(0f, widthMultiplierCurve.Evaluate(Mathf.Clamp01(rawProgress)));
+            }
+
             int count = pointWidthMultipliers != null ? pointWidthMultipliers.Count : 0;
             if (count <= 0)
                 return 1f;
@@ -556,6 +582,12 @@ namespace VFXTimelineSplineTool
         {
             if (!usePointTwistDegrees || spline == null)
                 return 0f;
+
+            if (twistControlMode == VFXSplineMeshStripControlMode.Curve)
+            {
+                EnsureCurves();
+                return twistDegreesCurve.Evaluate(Mathf.Clamp01(rawProgress));
+            }
 
             int count = pointTwistDegrees != null ? pointTwistDegrees.Count : 0;
             if (count <= 0)
