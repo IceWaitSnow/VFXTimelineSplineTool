@@ -119,8 +119,10 @@ namespace VFXTimelineSplineTool.EditorTools
                 DrawProperty("showDynamicBindingInfluence", "Show Influence Circles");
                 DrawProperty("dynamicStartInfluenceRange", "Start Influence Range");
                 DrawProperty("dynamicStartInfluenceFalloff", "Start Influence Falloff");
+                DrawDynamicFalloffPresetButtons(spline, "dynamicStartInfluenceFalloff", "Set Start Influence Falloff");
                 DrawProperty("dynamicEndInfluenceRange", "End Influence Range");
                 DrawProperty("dynamicEndInfluenceFalloff", "End Influence Falloff");
+                DrawDynamicFalloffPresetButtons(spline, "dynamicEndInfluenceFalloff", "Set End Influence Falloff");
 
                 using (new EditorGUILayout.HorizontalScope())
                 {
@@ -218,6 +220,51 @@ namespace VFXTimelineSplineTool.EditorTools
         {
             SerializedProperty p = serializedObject.FindProperty(name);
             if (p != null) EditorGUILayout.PropertyField(p, BuildContent(label, name, p), includeChildren);
+        }
+
+        private void DrawDynamicFalloffPresetButtons(VFXSimpleSpline spline, string propertyName, string undoName)
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Linear"))
+                    ApplyDynamicFalloffPreset(spline, propertyName, AnimationCurve.Linear(0f, 1f, 1f, 0f), undoName);
+                if (GUILayout.Button("Smooth"))
+                    ApplyDynamicFalloffPreset(spline, propertyName, AnimationCurve.EaseInOut(0f, 1f, 1f, 0f), undoName);
+                if (GUILayout.Button("Sharp"))
+                    ApplyDynamicFalloffPreset(spline, propertyName, CreateDynamicFalloffCurve(0f, 1f, 0.18f, 0.2f, 1f, 0f), undoName);
+                if (GUILayout.Button("Soft Tail"))
+                    ApplyDynamicFalloffPreset(spline, propertyName, CreateDynamicFalloffCurve(0f, 1f, 0.55f, 0.65f, 1f, 0f), undoName);
+            }
+        }
+
+        private void ApplyDynamicFalloffPreset(VFXSimpleSpline spline, string propertyName, AnimationCurve curve, string undoName)
+        {
+            if (spline == null)
+                return;
+
+            SerializedProperty property = serializedObject.FindProperty(propertyName);
+            if (property == null)
+                return;
+
+            Undo.RecordObject(spline, undoName);
+            property.animationCurveValue = curve;
+            serializedObject.ApplyModifiedProperties();
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            serializedObject.Update();
+            SceneView.RepaintAll();
+        }
+
+        private static AnimationCurve CreateDynamicFalloffCurve(params float[] values)
+        {
+            AnimationCurve curve = new AnimationCurve();
+            for (int i = 0; i + 1 < values.Length; i += 2)
+                curve.AddKey(values[i], values[i + 1]);
+
+            for (int i = 0; i < curve.length; i++)
+                curve.SmoothTangents(i, 0f);
+
+            return curve;
         }
 
         private static GUIContent BuildContent(string label, string propertyName, SerializedProperty property)
