@@ -172,6 +172,18 @@ namespace VFXTimelineSplineTool
         }
     }
 
+    [Serializable]
+    public class VFXSplineDynamicInfluence
+    {
+        public string name = "Influence";
+        public bool enabled = true;
+        public Transform target;
+        [Range(0f, 1f)] public float centerProgress = 0.5f;
+        [Range(0f, 1f)] public float range = 0.2f;
+        [Min(0f)] public float strength = 1f;
+        public AnimationCurve falloff = AnimationCurve.EaseInOut(0f, 1f, 1f, 0f);
+    }
+
     [ExecuteAlways]
     public class VFXSimpleSpline : MonoBehaviour
     {
@@ -226,6 +238,7 @@ namespace VFXTimelineSplineTool
         public AnimationCurve dynamicStartInfluenceFalloff = AnimationCurve.EaseInOut(0f, 1f, 1f, 0f);
         [Range(0f, 1f)] public float dynamicEndInfluenceRange = 0f;
         public AnimationCurve dynamicEndInfluenceFalloff = AnimationCurve.EaseInOut(0f, 1f, 1f, 0f);
+        public List<VFXSplineDynamicInfluence> dynamicInfluences = new List<VFXSplineDynamicInfluence>();
 
         [Header("距离等速 Progress")]
         [Range(32, 2048)] public int distanceSampleResolution = 256;
@@ -251,6 +264,7 @@ namespace VFXTimelineSplineTool
         [NonSerialized] private Vector3 lastDynamicStartWorld;
         [NonSerialized] private Vector3 lastDynamicEndWorld;
         [NonSerialized] private bool hasLastDynamicWorld;
+        [NonSerialized] private int lastDynamicInfluenceHash;
 
         public float ApproxLength
         {
@@ -276,6 +290,7 @@ namespace VFXTimelineSplineTool
             dynamicStartInfluenceRange = Mathf.Clamp01(dynamicStartInfluenceRange);
             dynamicEndInfluenceRange = Mathf.Clamp01(dynamicEndInfluenceRange);
             EnsureDynamicBindingCurves();
+            EnsureDynamicInfluences();
             MarkDistanceCacheDirty();
         }
 
@@ -706,19 +721,22 @@ namespace VFXTimelineSplineTool
             if (!enableDynamicStartEndBinding)
             {
                 hasLastDynamicWorld = false;
+                lastDynamicInfluenceHash = 0;
                 return;
             }
 
             Vector3 start = dynamicStartTransform != null ? dynamicStartTransform.position : Vector3.positiveInfinity;
             Vector3 end = dynamicEndTransform != null ? dynamicEndTransform.position : Vector3.negativeInfinity;
+            int influenceHash = GetDynamicInfluenceStateHash();
 
-            if (!hasLastDynamicWorld || start != lastDynamicStartWorld || end != lastDynamicEndWorld)
+            if (!hasLastDynamicWorld || start != lastDynamicStartWorld || end != lastDynamicEndWorld || influenceHash != lastDynamicInfluenceHash)
             {
                 cacheDirty = true;
                 if (pathMode == VFXSplinePathMode.Bezier)
                     RefreshAllAutoSmoothBezierPoints();
                 lastDynamicStartWorld = start;
                 lastDynamicEndWorld = end;
+                lastDynamicInfluenceHash = influenceHash;
                 hasLastDynamicWorld = true;
             }
         }
@@ -729,6 +747,28 @@ namespace VFXTimelineSplineTool
                 dynamicStartInfluenceFalloff = AnimationCurve.EaseInOut(0f, 1f, 1f, 0f);
             if (dynamicEndInfluenceFalloff == null)
                 dynamicEndInfluenceFalloff = AnimationCurve.EaseInOut(0f, 1f, 1f, 0f);
+        }
+
+        private void EnsureDynamicInfluences()
+        {
+            if (dynamicInfluences == null)
+                dynamicInfluences = new List<VFXSplineDynamicInfluence>();
+
+            for (int i = 0; i < dynamicInfluences.Count; i++)
+            {
+                VFXSplineDynamicInfluence influence = dynamicInfluences[i];
+                if (influence == null)
+                {
+                    influence = new VFXSplineDynamicInfluence();
+                    dynamicInfluences[i] = influence;
+                }
+
+                influence.centerProgress = Mathf.Clamp01(influence.centerProgress);
+                influence.range = Mathf.Clamp01(influence.range);
+                influence.strength = Mathf.Max(0f, influence.strength);
+                if (influence.falloff == null)
+                    influence.falloff = AnimationCurve.EaseInOut(0f, 1f, 1f, 0f);
+            }
         }
 
         private Vector3 ApplyDynamicBindingInfluence(int index, int count, Vector3 basePosition)
@@ -758,6 +798,28 @@ namespace VFXTimelineSplineTool
                 position += endDelta * endWeight;
             }
 
+            if (dynamicInfluences != null)
+            {
+                for (int i = 0; i < dynamicInfluences.Count; i++)
+                {
+                    VFXSplineDynamicInfluence influence = dynamicInfluences[i];
+                    if (influence == null || !influence.enabled || influence.target == null || influence.strength <= 0f)
+                        continue;
+
+                    float distance = Mathf.Abs(progress - Mathf.Clamp01(influence.centerProgress));
+                    if (loop)
+                        distance = Mathf.Min(distance, 1f - distance);
+
+                    float weight = GetDynamicBindingInfluenceWeight(distance, influence.range, influence.falloff) * influence.strength;
+                    if (Mathf.Abs(weight) <= 0.000001f)
+                        continue;
+
+                    Vector3 boundPosition = transform.InverseTransformPoint(influence.target.position);
+                    Vector3 baseCenter = GetBaseDynamicBindingPointAtProgress(influence.centerProgress, count);
+                    position += (boundPosition - baseCenter) * weight;
+                }
+            }
+
             return position;
         }
 
@@ -776,6 +838,22 @@ namespace VFXTimelineSplineTool
             return localPoints[index];
         }
 
+        private Vector3 GetBaseDynamicBindingPointAtProgress(float progress, int count)
+        {
+            count = Mathf.Max(1, count);
+            progress = Mathf.Clamp01(progress);
+            if (count == 1)
+                return GetBaseDynamicBindingPoint(0, count);
+
+            float scaled = progress * (count - 1);
+            int index = Mathf.FloorToInt(scaled);
+            if (index >= count - 1)
+                return GetBaseDynamicBindingPoint(count - 1, count);
+
+            float t = scaled - index;
+            return Vector3.Lerp(GetBaseDynamicBindingPoint(index, count), GetBaseDynamicBindingPoint(index + 1, count), t);
+        }
+
         private static float GetDynamicBindingInfluenceWeight(float endpointDistance, float range, AnimationCurve falloff)
         {
             endpointDistance = Mathf.Clamp01(endpointDistance);
@@ -787,6 +865,40 @@ namespace VFXTimelineSplineTool
 
             float t = Mathf.Clamp01(endpointDistance / range);
             return Mathf.Clamp01(falloff != null ? falloff.Evaluate(t) : 1f - t);
+        }
+
+        private int GetDynamicInfluenceStateHash()
+        {
+            unchecked
+            {
+                int hash = 17;
+                int count = dynamicInfluences != null ? dynamicInfluences.Count : 0;
+                hash = hash * 31 + count;
+
+                for (int i = 0; i < count; i++)
+                {
+                    VFXSplineDynamicInfluence influence = dynamicInfluences[i];
+                    if (influence == null)
+                    {
+                        hash = hash * 31;
+                        continue;
+                    }
+
+                    hash = hash * 31 + (influence.enabled ? 1 : 0);
+                    hash = hash * 31 + Mathf.RoundToInt(influence.centerProgress * 10000f);
+                    hash = hash * 31 + Mathf.RoundToInt(influence.range * 10000f);
+                    hash = hash * 31 + Mathf.RoundToInt(influence.strength * 10000f);
+                    if (influence.target != null)
+                    {
+                        Vector3 position = influence.target.position;
+                        hash = hash * 31 + Mathf.RoundToInt(position.x * 1000f);
+                        hash = hash * 31 + Mathf.RoundToInt(position.y * 1000f);
+                        hash = hash * 31 + Mathf.RoundToInt(position.z * 1000f);
+                    }
+                }
+
+                return hash;
+            }
         }
 
         public Vector3 GetLocalPoint(float progress, bool distanceBased)

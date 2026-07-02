@@ -123,10 +123,14 @@ namespace VFXTimelineSplineTool.EditorTools
                 DrawProperty("dynamicEndInfluenceRange", "End Influence Range");
                 DrawProperty("dynamicEndInfluenceFalloff", "End Influence Falloff");
                 DrawDynamicFalloffPresetButtons(spline, "dynamicEndInfluenceFalloff", "Set End Influence Falloff");
+                DrawDynamicInfluenceList(spline);
+
+                if (GUILayout.Button("Add Dynamic Influence"))
+                    AddDynamicInfluence(spline);
 
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button("烘焙动态端点到控制点"))
+                    if (GUILayout.Button("Bake Dynamic Binding To Points"))
                     {
                         ModifySpline(spline, "Bake Dynamic Ends To Points", () => spline.ApplyDynamicBindingToLocalPoints());
                     }
@@ -237,6 +241,90 @@ namespace VFXTimelineSplineTool.EditorTools
             }
         }
 
+        private void DrawDynamicInfluenceList(VFXSimpleSpline spline)
+        {
+            SerializedProperty list = serializedObject.FindProperty("dynamicInfluences");
+            if (list == null)
+                return;
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("Dynamic Influences", EditorStyles.boldLabel);
+            if (list.arraySize == 0)
+            {
+                EditorGUILayout.HelpBox("Add offset influences to pull the path around extra scene Transforms.", MessageType.None);
+                return;
+            }
+
+            for (int i = 0; i < list.arraySize; i++)
+            {
+                SerializedProperty item = list.GetArrayElementAtIndex(i);
+                if (item == null)
+                    continue;
+
+                SerializedProperty name = item.FindPropertyRelative("name");
+                string title = !string.IsNullOrEmpty(name != null ? name.stringValue : null) ? name.stringValue : "Influence " + i;
+
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    item.isExpanded = EditorGUILayout.Foldout(item.isExpanded, title, true);
+                    if (GUILayout.Button("X", GUILayout.Width(24f)))
+                    {
+                        serializedObject.ApplyModifiedProperties();
+                        Undo.RecordObject(spline, "Remove Dynamic Influence");
+                        list.DeleteArrayElementAtIndex(i);
+                        serializedObject.ApplyModifiedProperties();
+                        MarkDynamicInfluenceEdited(spline);
+                        EditorGUILayout.EndVertical();
+                        break;
+                    }
+                }
+
+                if (item.isExpanded)
+                    DrawDynamicInfluenceItem(spline, item, i);
+
+                EditorGUILayout.EndVertical();
+            }
+        }
+
+        private void DrawDynamicInfluenceItem(VFXSimpleSpline spline, SerializedProperty item, int index)
+        {
+            EditorGUILayout.PropertyField(item.FindPropertyRelative("name"), new GUIContent("Name"));
+            EditorGUILayout.PropertyField(item.FindPropertyRelative("enabled"), new GUIContent("Enabled"));
+            EditorGUILayout.PropertyField(item.FindPropertyRelative("target"), new GUIContent("Target"));
+            EditorGUILayout.PropertyField(item.FindPropertyRelative("centerProgress"), new GUIContent("Center Progress"));
+            EditorGUILayout.PropertyField(item.FindPropertyRelative("range"), new GUIContent("Range"));
+            EditorGUILayout.PropertyField(item.FindPropertyRelative("strength"), new GUIContent("Strength"));
+            EditorGUILayout.PropertyField(item.FindPropertyRelative("falloff"), new GUIContent("Falloff"));
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Center From Selected Point"))
+                    SetDynamicInfluenceCenterFromSelectedPoint(spline, item);
+            }
+
+            DrawDynamicInfluenceFalloffPresetButtons(spline, item);
+        }
+
+        private void DrawDynamicInfluenceFalloffPresetButtons(VFXSimpleSpline spline, SerializedProperty item)
+        {
+            SerializedProperty falloff = item.FindPropertyRelative("falloff");
+            if (falloff == null)
+                return;
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Linear"))
+                    ApplyDynamicInfluenceFalloffPreset(spline, falloff, AnimationCurve.Linear(0f, 1f, 1f, 0f));
+                if (GUILayout.Button("Smooth"))
+                    ApplyDynamicInfluenceFalloffPreset(spline, falloff, AnimationCurve.EaseInOut(0f, 1f, 1f, 0f));
+                if (GUILayout.Button("Sharp"))
+                    ApplyDynamicInfluenceFalloffPreset(spline, falloff, CreateDynamicFalloffCurve(0f, 1f, 0.18f, 0.2f, 1f, 0f));
+                if (GUILayout.Button("Soft Tail"))
+                    ApplyDynamicInfluenceFalloffPreset(spline, falloff, CreateDynamicFalloffCurve(0f, 1f, 0.55f, 0.65f, 1f, 0f));
+            }
+        }
+
         private void ApplyDynamicFalloffPreset(VFXSimpleSpline spline, string propertyName, AnimationCurve curve, string undoName)
         {
             if (spline == null)
@@ -249,6 +337,73 @@ namespace VFXTimelineSplineTool.EditorTools
             Undo.RecordObject(spline, undoName);
             property.animationCurveValue = curve;
             serializedObject.ApplyModifiedProperties();
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            serializedObject.Update();
+            SceneView.RepaintAll();
+        }
+
+        private void ApplyDynamicInfluenceFalloffPreset(VFXSimpleSpline spline, SerializedProperty falloff, AnimationCurve curve)
+        {
+            if (spline == null || falloff == null)
+                return;
+
+            Undo.RecordObject(spline, "Set Dynamic Influence Falloff");
+            falloff.animationCurveValue = curve;
+            serializedObject.ApplyModifiedProperties();
+            MarkDynamicInfluenceEdited(spline);
+            serializedObject.Update();
+        }
+
+        private void SetDynamicInfluenceCenterFromSelectedPoint(VFXSimpleSpline spline, SerializedProperty item)
+        {
+            if (spline == null || item == null)
+                return;
+
+            int pointCount = spline.GetActivePointCount();
+            if (pointCount <= 0)
+                return;
+
+            int selectedIndex = Mathf.Clamp(spline.selectedPointIndex, 0, pointCount - 1);
+            float center = pointCount <= 1 ? 0f : selectedIndex / (float)(pointCount - 1);
+            SerializedProperty centerProgress = item.FindPropertyRelative("centerProgress");
+            if (centerProgress == null)
+                return;
+
+            Undo.RecordObject(spline, "Set Dynamic Influence Center");
+            centerProgress.floatValue = center;
+            serializedObject.ApplyModifiedProperties();
+            MarkDynamicInfluenceEdited(spline);
+            serializedObject.Update();
+        }
+
+        private static void MarkDynamicInfluenceEdited(VFXSimpleSpline spline)
+        {
+            if (spline == null)
+                return;
+
+            spline.MarkDistanceCacheDirty();
+            EditorUtility.SetDirty(spline);
+            SceneView.RepaintAll();
+        }
+
+        private void AddDynamicInfluence(VFXSimpleSpline spline)
+        {
+            if (spline == null)
+                return;
+
+            Undo.RecordObject(spline, "Add Dynamic Influence");
+            if (spline.dynamicInfluences == null)
+                spline.dynamicInfluences = new List<VFXSplineDynamicInfluence>();
+
+            spline.dynamicInfluences.Add(new VFXSplineDynamicInfluence()
+            {
+                name = "Influence " + spline.dynamicInfluences.Count,
+                centerProgress = 0.5f,
+                range = 0.2f,
+                strength = 1f
+            });
+
             spline.MarkDistanceCacheDirty();
             EditorUtility.SetDirty(spline);
             serializedObject.Update();
@@ -2048,16 +2203,21 @@ namespace VFXTimelineSplineTool.EditorTools
 
             bool hasStart = spline.dynamicStartTransform != null && spline.dynamicStartInfluenceRange > 0.0001f;
             bool hasEnd = spline.dynamicEndTransform != null && spline.dynamicEndInfluenceRange > 0.0001f;
-            if (!hasStart && !hasEnd)
+            bool hasExtra = HasExtraDynamicInfluences(spline);
+            if (!hasStart && !hasEnd && !hasExtra)
                 return;
 
             Vector3 cameraNormal = GetSceneCameraNormal();
+            if (hasExtra)
+                DrawExtraDynamicInfluenceLabels(spline);
+
             for (int i = 0; i < count; i++)
             {
                 float progress = i / (float)(count - 1);
                 float startWeight = hasStart ? GetDynamicPreviewWeight(progress, spline.dynamicStartInfluenceRange, spline.dynamicStartInfluenceFalloff) : 0f;
                 float endWeight = hasEnd ? GetDynamicPreviewWeight(1f - progress, spline.dynamicEndInfluenceRange, spline.dynamicEndInfluenceFalloff) : 0f;
-                if (startWeight < 0.05f && endWeight < 0.05f)
+                float extraWeight = hasExtra ? GetExtraDynamicPreviewWeight(spline, progress) : 0f;
+                if (startWeight < 0.05f && endWeight < 0.05f && extraWeight < 0.05f)
                     continue;
 
                 Vector3 baseWorld = GetBaseControlPointWorld(spline, i);
@@ -2065,12 +2225,15 @@ namespace VFXTimelineSplineTool.EditorTools
                 float handleSize = HandleUtility.GetHandleSize(effectiveWorld) * spline.pointSize;
 
                 if (startWeight >= 0.05f)
-                    DrawDynamicInfluenceRing(effectiveWorld, cameraNormal, handleSize, startWeight, true);
+                    DrawDynamicInfluenceRing(effectiveWorld, cameraNormal, handleSize, startWeight, 0);
 
                 if (endWeight >= 0.05f)
-                    DrawDynamicInfluenceRing(effectiveWorld, cameraNormal, handleSize, endWeight, false);
+                    DrawDynamicInfluenceRing(effectiveWorld, cameraNormal, handleSize, endWeight, 1);
 
-                float weight = Mathf.Max(startWeight, endWeight);
+                if (extraWeight >= 0.05f)
+                    DrawDynamicInfluenceRing(effectiveWorld, cameraNormal, handleSize, extraWeight, 2);
+
+                float weight = Mathf.Max(startWeight, endWeight, extraWeight);
                 if ((effectiveWorld - baseWorld).sqrMagnitude > 0.000001f)
                 {
                     Handles.color = new Color(1f, 1f, 1f, Mathf.Lerp(0.45f, 0.9f, weight));
@@ -2079,15 +2242,73 @@ namespace VFXTimelineSplineTool.EditorTools
             }
         }
 
-        private static void DrawDynamicInfluenceRing(Vector3 center, Vector3 normal, float handleSize, float weight, bool isStart)
+        private static void DrawExtraDynamicInfluenceLabels(VFXSimpleSpline spline)
         {
-            Color color = isStart ? new Color(0f, 1f, 0.18f, 0.78f) : new Color(0f, 0.65f, 1f, 0.78f);
-            float baseRadius = isStart ? 2.25f : 1.55f;
+            if (spline == null || spline.dynamicInfluences == null)
+                return;
+
+            GUIStyle style = new GUIStyle(EditorStyles.boldLabel);
+            style.normal.textColor = new Color(1f, 0.58f, 0f, 1f);
+
+            for (int i = 0; i < spline.dynamicInfluences.Count; i++)
+            {
+                VFXSplineDynamicInfluence influence = spline.dynamicInfluences[i];
+                if (influence == null || !influence.enabled || influence.target == null || influence.range <= 0.0001f || influence.strength <= 0f)
+                    continue;
+
+                string label = !string.IsNullOrEmpty(influence.name) ? influence.name : "Influence " + i;
+                Vector3 world = influence.target.position;
+                float size = HandleUtility.GetHandleSize(world) * spline.pointSize;
+                Handles.Label(world + Vector3.up * size * 2f, label, style);
+            }
+        }
+
+        private static void DrawDynamicInfluenceRing(Vector3 center, Vector3 normal, float handleSize, float weight, int source)
+        {
+            Color color = source == 0 ? new Color(0f, 1f, 0.18f, 0.78f) : (source == 1 ? new Color(0f, 0.65f, 1f, 0.78f) : new Color(1f, 0.58f, 0f, 0.78f));
+            float baseRadius = source == 0 ? 2.25f : (source == 1 ? 1.55f : 1.9f);
             float radius = handleSize * (baseRadius + weight * 1.4f);
             float lineWidth = Mathf.Lerp(1.5f, 4f, weight);
 
             Handles.color = color;
             Handles.DrawWireDisc(center, normal, radius, lineWidth);
+        }
+
+        private static bool HasExtraDynamicInfluences(VFXSimpleSpline spline)
+        {
+            if (spline == null || spline.dynamicInfluences == null)
+                return false;
+
+            for (int i = 0; i < spline.dynamicInfluences.Count; i++)
+            {
+                VFXSplineDynamicInfluence influence = spline.dynamicInfluences[i];
+                if (influence != null && influence.enabled && influence.target != null && influence.range > 0.0001f && influence.strength > 0f)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static float GetExtraDynamicPreviewWeight(VFXSimpleSpline spline, float progress)
+        {
+            if (spline == null || spline.dynamicInfluences == null)
+                return 0f;
+
+            float weight = 0f;
+            for (int i = 0; i < spline.dynamicInfluences.Count; i++)
+            {
+                VFXSplineDynamicInfluence influence = spline.dynamicInfluences[i];
+                if (influence == null || !influence.enabled || influence.target == null || influence.strength <= 0f)
+                    continue;
+
+                float distance = Mathf.Abs(progress - Mathf.Clamp01(influence.centerProgress));
+                if (spline.loop)
+                    distance = Mathf.Min(distance, 1f - distance);
+
+                weight = Mathf.Max(weight, GetDynamicPreviewWeight(distance, influence.range, influence.falloff) * influence.strength);
+            }
+
+            return Mathf.Clamp01(weight);
         }
 
         private static Vector3 GetBaseControlPointWorld(VFXSimpleSpline spline, int index)

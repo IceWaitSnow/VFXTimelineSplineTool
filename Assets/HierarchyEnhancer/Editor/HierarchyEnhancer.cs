@@ -10,17 +10,21 @@ namespace UnityTool.HierarchyEnhancer
     {
         private const string EnabledKey = "UnityTool.HierarchyEnhancer.Enabled";
         private const string GuideLinesKey = "UnityTool.HierarchyEnhancer.GuideLines";
+        private const string ColoredGuideLinesKey = "UnityTool.HierarchyEnhancer.ColoredGuideLines";
         private const string BadgesKey = "UnityTool.HierarchyEnhancer.Badges";
         private const string InactiveFadeKey = "UnityTool.HierarchyEnhancer.InactiveFade";
         private const string RowStripesKey = "UnityTool.HierarchyEnhancer.RowStripes";
         private const string RowSeparatorsKey = "UnityTool.HierarchyEnhancer.RowSeparators";
         private const string ActiveToggleKey = "UnityTool.HierarchyEnhancer.ActiveToggle";
+        private const string SceneBookmarkXKey = "UnityTool.HierarchyEnhancer.SceneBookmarkX";
+        private const string SceneBookmarkYKey = "UnityTool.HierarchyEnhancer.SceneBookmarkY";
         private const string SettingsPath = "Assets/HierarchyEnhancer/Editor/HierarchyEnhancerSettings.asset";
 
         private const string MenuRoot = "Tools/层级增强";
         private const string ContextMenuRoot = "GameObject/层级增强";
         private const string EnabledMenu = MenuRoot + "/启用";
         private const string GuideLinesMenu = MenuRoot + "/显示层级辅助线";
+        private const string ColoredGuideLinesMenu = MenuRoot + "/彩色层级辅助线";
         private const string BadgesMenu = MenuRoot + "/显示组件标签";
         private const string InactiveFadeMenu = MenuRoot + "/淡化未激活对象";
         private const string RowStripesMenu = MenuRoot + "/显示隔行底色";
@@ -43,6 +47,15 @@ namespace UnityTool.HierarchyEnhancer
         private const string ContextGreenPresetMenu = ContextMenuRoot + "/颜色预设/绿色";
         private const string ContextBluePresetMenu = ContextMenuRoot + "/颜色预设/蓝色";
         private const string ContextPurplePresetMenu = ContextMenuRoot + "/颜色预设/紫色";
+        private const string ProjectFolderRedMenu = "Assets/层级增强/文件夹红色";
+        private const string ProjectFolderYellowMenu = "Assets/层级增强/文件夹黄色";
+        private const string ProjectFolderGreenMenu = "Assets/层级增强/文件夹绿色";
+        private const string ProjectFolderBlueMenu = "Assets/层级增强/文件夹蓝色";
+        private const string ProjectFolderPurpleMenu = "Assets/层级增强/文件夹紫色";
+        private const string ProjectFolderCustomMenu = "Assets/层级增强/文件夹自定义颜色...";
+        private const string ProjectFolderApplyChildrenMenu = "Assets/层级增强/文件夹颜色应用到子文件夹";
+        private const string ProjectFolderClearChildrenMenu = "Assets/层级增强/清除子文件夹颜色";
+        private const string ProjectFolderClearMenu = "Assets/层级增强/清除文件夹颜色";
 
         private const float BadgeHeight = 15f;
         private const float BadgePadding = 6f;
@@ -50,6 +63,8 @@ namespace UnityTool.HierarchyEnhancer
         private const float ObjectIconSize = 16f;
         private const float ActiveToggleSize = 16f;
         private const float ActiveTogglePadding = 6f;
+        private const float BookmarkIconSize = 16f;
+        private const float BookmarkIconGap = 4f;
         private const float IndentWidth = 14f;
         private const float MarkManagerRowHeight = 58f;
 
@@ -61,10 +76,14 @@ namespace UnityTool.HierarchyEnhancer
         private static GUIStyle nameStyle;
         private static Texture2D whiteTexture;
         private static int markListVersion;
+        private static bool isDraggingSceneBookmark;
+        private static Vector2 sceneBookmarkDragOffset;
 
         static HierarchyEnhancer()
         {
             EditorApplication.hierarchyWindowItemOnGUI += OnHierarchyWindowItemGUI;
+            EditorApplication.projectWindowItemOnGUI += OnProjectWindowItemGUI;
+            SceneView.duringSceneGui += OnSceneViewGUI;
             EditorApplication.hierarchyChanged += ClearObjectCaches;
             AssemblyReloadEvents.beforeAssemblyReload += ClearObjectCaches;
         }
@@ -93,6 +112,19 @@ namespace UnityTool.HierarchyEnhancer
         {
             Menu.SetChecked(GuideLinesMenu, ShowGuideLines);
             return IsEnabled;
+        }
+
+        [MenuItem(ColoredGuideLinesMenu)]
+        private static void ToggleColoredGuideLines()
+        {
+            SetBool(ColoredGuideLinesKey, !ShowColoredGuideLines);
+        }
+
+        [MenuItem(ColoredGuideLinesMenu, true)]
+        private static bool ValidateToggleColoredGuideLines()
+        {
+            Menu.SetChecked(ColoredGuideLinesMenu, ShowColoredGuideLines);
+            return IsEnabled && ShowGuideLines;
         }
 
         [MenuItem(BadgesMenu)]
@@ -283,31 +315,31 @@ namespace UnityTool.HierarchyEnhancer
         [MenuItem(ContextRedPresetMenu, false, 55)]
         private static void ApplyRedPreset()
         {
-            ApplyColorPreset(new Color(1f, 0.28f, 0.22f, 1f), new Color(1f, 0.22f, 0.15f, 0.28f));
+            ApplyColorPreset(new Color(1f, 0.22f, 0.15f, 0.28f));
         }
 
         [MenuItem(ContextYellowPresetMenu, false, 56)]
         private static void ApplyYellowPreset()
         {
-            ApplyColorPreset(new Color(1f, 0.78f, 0.22f, 1f), new Color(1f, 0.64f, 0.12f, 0.24f));
+            ApplyColorPreset(new Color(1f, 0.64f, 0.12f, 0.24f));
         }
 
         [MenuItem(ContextGreenPresetMenu, false, 57)]
         private static void ApplyGreenPreset()
         {
-            ApplyColorPreset(new Color(0.45f, 0.9f, 0.48f, 1f), new Color(0.15f, 0.65f, 0.25f, 0.24f));
+            ApplyColorPreset(new Color(0.15f, 0.65f, 0.25f, 0.24f));
         }
 
         [MenuItem(ContextBluePresetMenu, false, 58)]
         private static void ApplyBluePreset()
         {
-            ApplyColorPreset(new Color(0.45f, 0.72f, 1f, 1f), new Color(0.15f, 0.42f, 1f, 0.24f));
+            ApplyColorPreset(new Color(0.15f, 0.42f, 1f, 0.24f));
         }
 
         [MenuItem(ContextPurplePresetMenu, false, 59)]
         private static void ApplyPurplePreset()
         {
-            ApplyColorPreset(new Color(0.82f, 0.58f, 1f, 1f), new Color(0.52f, 0.25f, 0.85f, 0.24f));
+            ApplyColorPreset(new Color(0.52f, 0.25f, 0.85f, 0.24f));
         }
 
         [MenuItem(ContextRedPresetMenu, true)]
@@ -345,6 +377,170 @@ namespace UnityTool.HierarchyEnhancer
             return Selection.gameObjects.Length > 0;
         }
 
+        [MenuItem(ProjectFolderRedMenu, false, 2000)]
+        private static void SetSelectedProjectFoldersRed()
+        {
+            SetSelectedProjectFolderColor(new Color(1f, 0.22f, 0.15f, 0.34f));
+        }
+
+        [MenuItem(ProjectFolderYellowMenu, false, 2001)]
+        private static void SetSelectedProjectFoldersYellow()
+        {
+            SetSelectedProjectFolderColor(new Color(1f, 0.64f, 0.12f, 0.32f));
+        }
+
+        [MenuItem(ProjectFolderGreenMenu, false, 2002)]
+        private static void SetSelectedProjectFoldersGreen()
+        {
+            SetSelectedProjectFolderColor(new Color(0.15f, 0.65f, 0.25f, 0.32f));
+        }
+
+        [MenuItem(ProjectFolderBlueMenu, false, 2003)]
+        private static void SetSelectedProjectFoldersBlue()
+        {
+            SetSelectedProjectFolderColor(new Color(0.15f, 0.42f, 1f, 0.32f));
+        }
+
+        [MenuItem(ProjectFolderPurpleMenu, false, 2004)]
+        private static void SetSelectedProjectFoldersPurple()
+        {
+            SetSelectedProjectFolderColor(new Color(0.52f, 0.25f, 0.85f, 0.32f));
+        }
+
+        [MenuItem(ProjectFolderCustomMenu, false, 2005)]
+        private static void EditSelectedProjectFolderColor()
+        {
+            var folderPaths = GetSelectedProjectFolderPaths();
+            if (folderPaths.Length == 0)
+            {
+                return;
+            }
+
+            ProjectFolderColorWindow.Open(folderPaths);
+        }
+
+        [MenuItem(ProjectFolderApplyChildrenMenu, false, 2006)]
+        private static void ApplySelectedProjectFolderColorToChildren()
+        {
+            var folderPaths = GetSelectedProjectFolderPaths();
+            if (folderPaths.Length == 0)
+            {
+                return;
+            }
+
+            GetOrCreateSettings().ApplyFolderColorsToChildren(folderPaths);
+        }
+
+        [MenuItem(ProjectFolderClearChildrenMenu, false, 2007)]
+        private static void ClearSelectedProjectChildrenFolderColor()
+        {
+            var folderPaths = GetSelectedProjectFolderPaths();
+            if (folderPaths.Length == 0)
+            {
+                return;
+            }
+
+            GetOrCreateSettings().ClearFolderColorsFromChildren(folderPaths);
+        }
+
+        [MenuItem(ProjectFolderClearMenu, false, 2008)]
+        private static void ClearSelectedProjectFolderColor()
+        {
+            var folderPaths = GetSelectedProjectFolderPaths();
+            if (folderPaths.Length == 0)
+            {
+                return;
+            }
+
+            GetOrCreateSettings().SetFolderColor(folderPaths, false, Color.clear);
+        }
+
+        [MenuItem(ProjectFolderRedMenu, true)]
+        private static bool ValidateSetSelectedProjectFoldersRed()
+        {
+            return HasSelectedProjectFolders();
+        }
+
+        [MenuItem(ProjectFolderYellowMenu, true)]
+        private static bool ValidateSetSelectedProjectFoldersYellow()
+        {
+            return HasSelectedProjectFolders();
+        }
+
+        [MenuItem(ProjectFolderGreenMenu, true)]
+        private static bool ValidateSetSelectedProjectFoldersGreen()
+        {
+            return HasSelectedProjectFolders();
+        }
+
+        [MenuItem(ProjectFolderBlueMenu, true)]
+        private static bool ValidateSetSelectedProjectFoldersBlue()
+        {
+            return HasSelectedProjectFolders();
+        }
+
+        [MenuItem(ProjectFolderPurpleMenu, true)]
+        private static bool ValidateSetSelectedProjectFoldersPurple()
+        {
+            return HasSelectedProjectFolders();
+        }
+
+        [MenuItem(ProjectFolderCustomMenu, true)]
+        private static bool ValidateEditSelectedProjectFolderColor()
+        {
+            return HasSelectedProjectFolders();
+        }
+
+        [MenuItem(ProjectFolderApplyChildrenMenu, true)]
+        private static bool ValidateApplySelectedProjectFolderColorToChildren()
+        {
+            return HasSelectedProjectFolders();
+        }
+
+        [MenuItem(ProjectFolderClearChildrenMenu, true)]
+        private static bool ValidateClearSelectedProjectChildrenFolderColor()
+        {
+            return HasSelectedProjectFolders();
+        }
+
+        [MenuItem(ProjectFolderClearMenu, true)]
+        private static bool ValidateClearSelectedProjectFolderColor()
+        {
+            return HasSelectedProjectFolders();
+        }
+
+        private static bool HasSelectedProjectFolders()
+        {
+            return GetSelectedProjectFolderPaths().Length > 0;
+        }
+
+        private static void SetSelectedProjectFolderColor(Color color)
+        {
+            var folderPaths = GetSelectedProjectFolderPaths();
+            if (folderPaths.Length == 0)
+            {
+                return;
+            }
+
+            GetOrCreateSettings().SetFolderColor(folderPaths, true, color);
+        }
+
+        private static string[] GetSelectedProjectFolderPaths()
+        {
+            var paths = new List<string>();
+            var guids = Selection.assetGUIDs;
+            for (var i = 0; i < guids.Length; i++)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guids[i]);
+                if (!string.IsNullOrEmpty(path) && AssetDatabase.IsValidFolder(path))
+                {
+                    paths.Add(path);
+                }
+            }
+
+            return paths.ToArray();
+        }
+
         [MenuItem(ComponentBadgesMenu)]
         private static void CustomizeComponentBadges()
         {
@@ -375,6 +571,11 @@ namespace UnityTool.HierarchyEnhancer
         private static bool ShowGuideLines
         {
             get { return EditorPrefs.GetBool(GuideLinesKey, true); }
+        }
+
+        private static bool ShowColoredGuideLines
+        {
+            get { return EditorPrefs.GetBool(ColoredGuideLinesKey, true); }
         }
 
         private static bool ShowBadges
@@ -419,9 +620,9 @@ namespace UnityTool.HierarchyEnhancer
             return nextValue;
         }
 
-        private static void ApplyColorPreset(Color textColor, Color rowColor)
+        private static void ApplyColorPreset(Color rowColor)
         {
-            GetOrCreateSettings().SetObjectColor(Selection.gameObjects, true, textColor, true, rowColor);
+            GetOrCreateSettings().SetObjectColor(Selection.gameObjects, false, Color.white, true, rowColor);
         }
 
         private static void GetSettingsStyle(GameObject gameObject, out CopiedObjectStyle style)
@@ -500,6 +701,7 @@ namespace UnityTool.HierarchyEnhancer
             EditorUtility.SetDirty(settings);
             AssetDatabase.SaveAssets();
             EditorApplication.RepaintHierarchyWindow();
+            EditorApplication.RepaintProjectWindow();
         }
 
         private static void ClearObjectCaches()
@@ -527,13 +729,18 @@ namespace UnityTool.HierarchyEnhancer
                 return;
             }
 
+            var settings = GetSettings();
+            if (HandleBookmarkIcon(selectionRect, gameObject, settings))
+            {
+                return;
+            }
+
             if (Event.current.type != EventType.Repaint)
             {
                 return;
             }
 
             var isSelected = IsSelected(gameObject);
-            var settings = GetSettings();
             ObjectStyle objectStyle;
             var hasObjectStyle = settings != null;
             if (hasObjectStyle)
@@ -543,6 +750,13 @@ namespace UnityTool.HierarchyEnhancer
             else
             {
                 objectStyle = default(ObjectStyle);
+            }
+
+            var isLocallyInactive = !gameObject.activeSelf;
+            var isHierarchyInactive = !gameObject.activeInHierarchy;
+            if (isLocallyInactive)
+            {
+                objectStyle = GetInactiveObjectStyle(objectStyle);
             }
 
             if (hasObjectStyle && objectStyle.useRowColor && !isSelected)
@@ -557,12 +771,12 @@ namespace UnityTool.HierarchyEnhancer
 
             if (ShowGuideLines)
             {
-                DrawGuideLines(selectionRect, gameObject.transform);
+                DrawGuideLines(selectionRect, gameObject.transform, settings);
             }
 
-            if (FadeInactive && !gameObject.activeInHierarchy && !isSelected)
+            if (FadeInactive && isHierarchyInactive && !isSelected)
             {
-                DrawOverlay(selectionRect, EditorGUIUtility.isProSkin ? new Color(0f, 0f, 0f, 0.18f) : new Color(1f, 1f, 1f, 0.35f));
+                DrawOverlay(selectionRect, GetInactiveFadeColor());
             }
 
             if (hasObjectStyle && objectStyle.useTextColor && !isSelected)
@@ -577,9 +791,197 @@ namespace UnityTool.HierarchyEnhancer
 
             DrawBadges(selectionRect, gameObject, isSelected, settings, ShowActiveToggle);
 
+            DrawBookmarkIcon(selectionRect, gameObject, settings);
+
             if (ShowActiveToggle)
             {
                 DrawActiveToggle(selectionRect, gameObject);
+            }
+        }
+
+        private static void OnProjectWindowItemGUI(string guid, Rect selectionRect)
+        {
+            if (!IsEnabled || Event.current.type != EventType.Repaint)
+            {
+                return;
+            }
+
+            var path = AssetDatabase.GUIDToAssetPath(guid);
+            if (string.IsNullOrEmpty(path) || !AssetDatabase.IsValidFolder(path))
+            {
+                return;
+            }
+
+            var settings = GetSettings();
+            if (settings == null || !settings.TryGetFolderColor(path, out var color))
+            {
+                return;
+            }
+
+            DrawProjectFolderColor(selectionRect, color);
+        }
+
+        private static void DrawProjectFolderColor(Rect rect, Color color)
+        {
+            var rowRect = rect.height <= 20f
+                ? new Rect(0f, rect.y, Mathf.Max(EditorGUIUtility.currentViewWidth, rect.xMax + 64f), rect.height)
+                : rect;
+            var accentRect = new Rect(rowRect.x, rowRect.y, 4f, rowRect.height);
+
+            DrawOverlay(rowRect, color);
+            DrawOverlay(accentRect, new Color(color.r, color.g, color.b, Mathf.Clamp01(color.a + 0.28f)));
+        }
+
+        private static void OnSceneViewGUI(SceneView sceneView)
+        {
+            if (!IsEnabled || sceneView == null)
+            {
+                return;
+            }
+
+            var settings = GetSettings();
+            var bookmarkCount = CountValidBookmarks(settings);
+            if (bookmarkCount == 0)
+            {
+                return;
+            }
+
+            Handles.BeginGUI();
+            var panelRect = GetSceneBookmarkPanelRect(sceneView);
+            HandleSceneBookmarkPanelDrag(sceneView, panelRect);
+            GUI.Box(panelRect, GUIContent.none, EditorStyles.toolbar);
+
+            var dragRect = new Rect(panelRect.x, panelRect.y, 16f, panelRect.height);
+            GUI.Label(dragRect, "⋮", EditorStyles.centeredGreyMiniLabel);
+
+            var buttonRect = new Rect(panelRect.x + 16f, panelRect.y, panelRect.width - 16f, panelRect.height);
+            var content = new GUIContent("★ " + bookmarkCount, "层级书签");
+            if (GUI.Button(buttonRect, content, EditorStyles.toolbarDropDown))
+            {
+                ShowSceneBookmarkMenu(buttonRect, sceneView, settings);
+            }
+            Handles.EndGUI();
+        }
+
+        private static Rect GetSceneBookmarkPanelRect(SceneView sceneView)
+        {
+            const float width = 86f;
+            const float height = 24f;
+            var defaultX = sceneView.position.width - width - 20f;
+            var defaultY = sceneView.position.height - height - 18f;
+            var x = EditorPrefs.HasKey(SceneBookmarkXKey) ? EditorPrefs.GetFloat(SceneBookmarkXKey) : defaultX;
+            var y = EditorPrefs.HasKey(SceneBookmarkYKey) ? EditorPrefs.GetFloat(SceneBookmarkYKey) : defaultY;
+
+            x = Mathf.Clamp(x, 4f, Mathf.Max(4f, sceneView.position.width - width - 4f));
+            y = Mathf.Clamp(y, 22f, Mathf.Max(22f, sceneView.position.height - height - 4f));
+            return new Rect(x, y, width, height);
+        }
+
+        private static void HandleSceneBookmarkPanelDrag(SceneView sceneView, Rect panelRect)
+        {
+            var currentEvent = Event.current;
+            var dragRect = new Rect(panelRect.x, panelRect.y, 16f, panelRect.height);
+
+            EditorGUIUtility.AddCursorRect(dragRect, MouseCursor.Pan);
+
+            if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0 && dragRect.Contains(currentEvent.mousePosition))
+            {
+                isDraggingSceneBookmark = true;
+                sceneBookmarkDragOffset = currentEvent.mousePosition - panelRect.position;
+                currentEvent.Use();
+            }
+
+            if (isDraggingSceneBookmark && currentEvent.type == EventType.MouseDrag)
+            {
+                var nextPosition = currentEvent.mousePosition - sceneBookmarkDragOffset;
+                nextPosition.x = Mathf.Clamp(nextPosition.x, 4f, Mathf.Max(4f, sceneView.position.width - panelRect.width - 4f));
+                nextPosition.y = Mathf.Clamp(nextPosition.y, 22f, Mathf.Max(22f, sceneView.position.height - panelRect.height - 4f));
+                EditorPrefs.SetFloat(SceneBookmarkXKey, nextPosition.x);
+                EditorPrefs.SetFloat(SceneBookmarkYKey, nextPosition.y);
+                sceneView.Repaint();
+                currentEvent.Use();
+            }
+
+            if (currentEvent.type == EventType.MouseUp || currentEvent.rawType == EventType.MouseUp)
+            {
+                isDraggingSceneBookmark = false;
+            }
+        }
+
+        private static int CountValidBookmarks(HierarchyEnhancerSettings settings)
+        {
+            if (settings == null)
+            {
+                return 0;
+            }
+
+            var count = 0;
+            for (var i = 0; i < settings.objectLabelRules.Count; i++)
+            {
+                var rule = settings.objectLabelRules[i];
+                if (rule != null && rule.bookmarked && HierarchyEnhancerSettings.ResolveObject(rule) != null)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static void ShowSceneBookmarkMenu(Rect buttonRect, SceneView sceneView, HierarchyEnhancerSettings settings)
+        {
+            var menu = new GenericMenu();
+            var added = false;
+
+            for (var i = 0; i < settings.objectLabelRules.Count; i++)
+            {
+                var rule = settings.objectLabelRules[i];
+                if (rule == null || !rule.bookmarked)
+                {
+                    continue;
+                }
+
+                var gameObject = HierarchyEnhancerSettings.ResolveObject(rule);
+                if (gameObject == null)
+                {
+                    continue;
+                }
+
+                var itemObject = gameObject;
+                var itemView = sceneView;
+                menu.AddItem(new GUIContent(GetSceneBookmarkMenuName(rule, gameObject)), false, () =>
+                {
+                    SelectSceneBookmark(itemObject, itemView);
+                });
+                added = true;
+            }
+
+            if (!added)
+            {
+                menu.AddDisabledItem(new GUIContent("暂无有效书签"));
+            }
+
+            menu.DropDown(buttonRect);
+        }
+
+        private static string GetSceneBookmarkMenuName(ObjectLabelRule rule, GameObject gameObject)
+        {
+            var label = string.IsNullOrWhiteSpace(rule.label) ? string.Empty : "  [" + rule.label.Trim() + "]";
+            return gameObject.name + label;
+        }
+
+        private static void SelectSceneBookmark(GameObject gameObject, SceneView sceneView)
+        {
+            if (gameObject == null)
+            {
+                return;
+            }
+
+            Selection.activeGameObject = gameObject;
+            EditorGUIUtility.PingObject(gameObject);
+            if (sceneView != null)
+            {
+                sceneView.FrameSelected();
             }
         }
 
@@ -616,15 +1018,60 @@ namespace UnityTool.HierarchyEnhancer
             return false;
         }
 
+        private static bool HandleBookmarkIcon(Rect rowRect, GameObject gameObject, HierarchyEnhancerSettings settings)
+        {
+            if (settings == null || !settings.TryGetObjectRuleForGUI(gameObject, out var rule) || rule == null || !rule.bookmarked)
+            {
+                return false;
+            }
+
+            var rect = GetBookmarkIconRect(rowRect);
+            EditorGUIUtility.AddCursorRect(rect, MouseCursor.Link);
+
+            var currentEvent = Event.current;
+            if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0 && rect.Contains(currentEvent.mousePosition))
+            {
+                settings.SetBookmark(rule, false);
+                currentEvent.Use();
+                return true;
+            }
+
+            return false;
+        }
+
         private static void DrawActiveToggle(Rect rowRect, GameObject gameObject)
         {
             EditorGUI.Toggle(GetActiveToggleRect(rowRect), gameObject.activeSelf);
+        }
+
+        private static void DrawBookmarkIcon(Rect rowRect, GameObject gameObject, HierarchyEnhancerSettings settings)
+        {
+            if (settings == null || !settings.TryGetObjectRuleForGUI(gameObject, out var rule) || rule == null || !rule.bookmarked)
+            {
+                return;
+            }
+
+            var rect = GetBookmarkIconRect(rowRect);
+            var oldColor = GUI.color;
+            GUI.color = EditorGUIUtility.isProSkin
+                ? new Color(1f, 0.82f, 0.18f, 1f)
+                : new Color(0.95f, 0.58f, 0.05f, 1f);
+            GUI.Label(rect, "★", EditorStyles.boldLabel);
+            GUI.color = oldColor;
         }
 
         private static Rect GetActiveToggleRect(Rect rowRect)
         {
             var y = rowRect.y + Mathf.Floor((rowRect.height - ActiveToggleSize) * 0.5f);
             return new Rect(rowRect.xMax - ActiveToggleSize - ActiveTogglePadding, y, ActiveToggleSize, ActiveToggleSize);
+        }
+
+        private static Rect GetBookmarkIconRect(Rect rowRect)
+        {
+            var toggleOffset = ShowActiveToggle ? ActiveToggleSize + BookmarkIconGap : 0f;
+            var x = rowRect.xMax - ActiveTogglePadding - toggleOffset - BookmarkIconSize;
+            var y = rowRect.y + Mathf.Floor((rowRect.height - BookmarkIconSize) * 0.5f);
+            return new Rect(x, y, BookmarkIconSize, BookmarkIconSize);
         }
 
         private static void DrawRowStripe(Rect rect, int siblingIndex)
@@ -646,7 +1093,7 @@ namespace UnityTool.HierarchyEnhancer
             EditorGUI.DrawRect(new Rect(rect.x, y, rect.width, 1f), color);
         }
 
-        private static void DrawGuideLines(Rect rect, Transform transform)
+        private static void DrawGuideLines(Rect rect, Transform transform, HierarchyEnhancerSettings settings)
         {
             var depth = GetDepth(transform);
             if (depth <= 0)
@@ -654,7 +1101,7 @@ namespace UnityTool.HierarchyEnhancer
                 return;
             }
 
-            var lineColor = EditorGUIUtility.isProSkin ? new Color(1f, 1f, 1f, 0.13f) : new Color(0f, 0f, 0f, 0.13f);
+            var lineColor = GetGuideLineColor(transform, settings);
             var startX = rect.x - (depth * IndentWidth) - 9f;
             var centerY = Mathf.Floor(rect.y + rect.height * 0.5f) + 0.5f;
 
@@ -666,6 +1113,30 @@ namespace UnityTool.HierarchyEnhancer
 
             var elbowX = Mathf.Floor(startX + (depth - 1) * IndentWidth) + 0.5f;
             EditorGUI.DrawRect(new Rect(elbowX, centerY, IndentWidth * 0.75f, 1f), lineColor);
+        }
+
+        private static Color GetGuideLineColor(Transform transform, HierarchyEnhancerSettings settings)
+        {
+            if (ShowColoredGuideLines && settings != null)
+            {
+                var current = transform;
+                while (current != null)
+                {
+                    if (settings.TryGetObjectStyle(current.gameObject, out var style) && style.useRowColor)
+                    {
+                        return GetSubtleGuideLineColor(style.rowColor);
+                    }
+
+                    current = current.parent;
+                }
+            }
+
+            return EditorGUIUtility.isProSkin ? new Color(1f, 1f, 1f, 0.13f) : new Color(0f, 0f, 0f, 0.13f);
+        }
+
+        private static Color GetSubtleGuideLineColor(Color color)
+        {
+            return new Color(color.r, color.g, color.b, EditorGUIUtility.isProSkin ? 0.28f : 0.34f);
         }
 
         private static int GetDepth(Transform transform)
@@ -692,7 +1163,9 @@ namespace UnityTool.HierarchyEnhancer
 
             EnsureStyles();
 
-            var right = rect.xMax - 4f - (reserveActiveToggle ? ActiveToggleSize + ActiveTogglePadding * 2f : 0f);
+            var rightReservedWidth = reserveActiveToggle ? ActiveToggleSize + ActiveTogglePadding * 2f : ActiveTogglePadding;
+            rightReservedWidth += BookmarkIconSize + BookmarkIconGap;
+            var right = rect.xMax - 4f - rightReservedWidth;
             var y = rect.y + Mathf.Floor((rect.height - BadgeHeight) * 0.5f);
             if (objectIcon != null)
             {
@@ -971,6 +1444,50 @@ namespace UnityTool.HierarchyEnhancer
                 1f);
         }
 
+        private static ObjectStyle GetInactiveObjectStyle(ObjectStyle style)
+        {
+            if (style.useRowColor)
+            {
+                style.rowColor = GetInactiveRowColor(style.rowColor);
+            }
+
+            if (style.useTextColor)
+            {
+                style.textColor = GetInactiveTextColor(style.textColor);
+            }
+
+            return style;
+        }
+
+        private static Color GetInactiveRowColor(Color color)
+        {
+            var gray = color.grayscale;
+            return new Color(
+                Mathf.Lerp(color.r, gray, 0.55f),
+                Mathf.Lerp(color.g, gray, 0.55f),
+                Mathf.Lerp(color.b, gray, 0.55f),
+                Mathf.Clamp01(color.a * 0.45f));
+        }
+
+        private static Color GetInactiveTextColor(Color color)
+        {
+            var target = EditorGUIUtility.isProSkin
+                ? new Color(0.55f, 0.55f, 0.55f, 1f)
+                : new Color(0.45f, 0.45f, 0.45f, 1f);
+            return new Color(
+                Mathf.Lerp(color.r, target.r, 0.72f),
+                Mathf.Lerp(color.g, target.g, 0.72f),
+                Mathf.Lerp(color.b, target.b, 0.72f),
+                Mathf.Clamp01(color.a * 0.75f));
+        }
+
+        private static Color GetInactiveFadeColor()
+        {
+            return EditorGUIUtility.isProSkin
+                ? new Color(0f, 0f, 0f, 0.24f)
+                : new Color(1f, 1f, 1f, 0.42f);
+        }
+
         [Serializable]
         public sealed class BadgeRule
         {
@@ -984,6 +1501,8 @@ namespace UnityTool.HierarchyEnhancer
         {
             public string objectId;
             public string objectName;
+            public string scenePath;
+            public string hierarchyPath;
             public string label;
             public bool bookmarked;
             public bool useTextColor;
@@ -1003,6 +1522,13 @@ namespace UnityTool.HierarchyEnhancer
             public Color rowColor = new Color(1f, 0.35f, 0.2f, 0.25f);
         }
 
+        [Serializable]
+        public sealed class FolderColorRule
+        {
+            public string folderPath;
+            public Color color = new Color(1f, 0.22f, 0.15f, 0.34f);
+        }
+
         public struct ObjectStyle
         {
             public bool useTextColor;
@@ -1020,17 +1546,21 @@ namespace UnityTool.HierarchyEnhancer
             public Color rowColor = Color.clear;
         }
 
-        public sealed class HierarchyEnhancerSettings : ScriptableObject
+        public class HierarchyEnhancerSettings : ScriptableObject
         {
             public List<BadgeRule> badgeRules = new List<BadgeRule>();
             public List<ObjectLabelRule> objectLabelRules = new List<ObjectLabelRule>();
             public List<StyleTemplate> styleTemplates = new List<StyleTemplate>();
+            public List<FolderColorRule> folderColorRules = new List<FolderColorRule>();
 
             [NonSerialized]
             private readonly Dictionary<string, ObjectLabelRule> objectRuleById = new Dictionary<string, ObjectLabelRule>();
 
             [NonSerialized]
             private readonly Dictionary<string, BadgeRule> badgeRuleByTypeName = new Dictionary<string, BadgeRule>();
+
+            [NonSerialized]
+            private readonly Dictionary<string, FolderColorRule> folderColorRuleByPath = new Dictionary<string, FolderColorRule>();
 
             [NonSerialized]
             private bool lookupCacheReady;
@@ -1050,7 +1580,7 @@ namespace UnityTool.HierarchyEnhancer
 
             public static HierarchyEnhancerSettings CreateDefaultAsset()
             {
-                var settings = CreateInstance<HierarchyEnhancerSettings>();
+                var settings = CreateInstance<global::UnityTool.HierarchyEnhancer.HierarchyEnhancerSettings>();
                 settings.badgeRules.Add(new BadgeRule { componentTypeName = "Camera", label = "Cam" });
                 settings.badgeRules.Add(new BadgeRule { componentTypeName = "Light", label = "Lgt" });
                 settings.badgeRules.Add(new BadgeRule { componentTypeName = "Animator", label = "Anim" });
@@ -1069,13 +1599,6 @@ namespace UnityTool.HierarchyEnhancer
                     return false;
                 }
 
-                styleTemplates.Add(new StyleTemplate
-                {
-                    name = "红色粒子",
-                    label = "红色粒子",
-                    textColor = new Color(1f, 0.38f, 0.32f, 1f),
-                    rowColor = new Color(1f, 0.22f, 0.15f, 0.26f)
-                });
                 styleTemplates.Add(new StyleTemplate
                 {
                     name = "路径节点",
@@ -1111,6 +1634,7 @@ namespace UnityTool.HierarchyEnhancer
             {
                 objectRuleById.Clear();
                 badgeRuleByTypeName.Clear();
+                folderColorRuleByPath.Clear();
 
                 for (var i = 0; i < objectLabelRules.Count; i++)
                 {
@@ -1132,6 +1656,17 @@ namespace UnityTool.HierarchyEnhancer
                     }
 
                     badgeRuleByTypeName[rule.componentTypeName] = rule;
+                }
+
+                for (var i = 0; i < folderColorRules.Count; i++)
+                {
+                    var rule = folderColorRules[i];
+                    if (rule == null || string.IsNullOrEmpty(rule.folderPath))
+                    {
+                        continue;
+                    }
+
+                    folderColorRuleByPath[NormalizeAssetPath(rule.folderPath)] = rule;
                 }
 
                 lookupCacheReady = true;
@@ -1156,6 +1691,21 @@ namespace UnityTool.HierarchyEnhancer
 
                 label = null;
                 return false;
+            }
+
+            public bool TryGetFolderColor(string folderPath, out Color color)
+            {
+                RebuildLookupCacheIfNeeded();
+
+                FolderColorRule rule;
+                if (!folderColorRuleByPath.TryGetValue(NormalizeAssetPath(folderPath), out rule) || rule == null)
+                {
+                    color = Color.clear;
+                    return false;
+                }
+
+                color = rule.color;
+                return true;
             }
 
             public bool TryGetObjectLabel(GameObject gameObject, out string label)
@@ -1188,6 +1738,11 @@ namespace UnityTool.HierarchyEnhancer
                     rowColor = rule.rowColor
                 };
                 return style.useTextColor || style.useRowColor;
+            }
+
+            public bool TryGetObjectRuleForGUI(GameObject gameObject, out ObjectLabelRule rule)
+            {
+                return TryGetObjectRule(gameObject, out rule);
             }
 
             public static string GetObjectIdentifier(GameObject gameObject)
@@ -1224,6 +1779,60 @@ namespace UnityTool.HierarchyEnhancer
                 for (var i = 0; i < gameObjects.Length; i++)
                 {
                     SetObjectColor(gameObjects[i], useTextColor, textColor, useRowColor, rowColor);
+                }
+
+                CleanupEmptyRules();
+                MarkSettingsChanged(this);
+            }
+
+            public void SetFolderColor(string[] folderPaths, bool enabled, Color color)
+            {
+                if (folderPaths == null || folderPaths.Length == 0)
+                {
+                    return;
+                }
+
+                Undo.RecordObject(this, enabled ? "Set Project Folder Color" : "Clear Project Folder Color");
+
+                for (var i = 0; i < folderPaths.Length; i++)
+                {
+                    SetFolderColor(folderPaths[i], enabled, color);
+                }
+
+                CleanupEmptyRules();
+                MarkSettingsChanged(this);
+            }
+
+            public void ApplyFolderColorsToChildren(string[] folderPaths)
+            {
+                if (folderPaths == null || folderPaths.Length == 0)
+                {
+                    return;
+                }
+
+                Undo.RecordObject(this, "Apply Project Folder Color To Children");
+
+                for (var i = 0; i < folderPaths.Length; i++)
+                {
+                    ApplyFolderColorToChildren(folderPaths[i]);
+                }
+
+                CleanupEmptyRules();
+                MarkSettingsChanged(this);
+            }
+
+            public void ClearFolderColorsFromChildren(string[] folderPaths)
+            {
+                if (folderPaths == null || folderPaths.Length == 0)
+                {
+                    return;
+                }
+
+                Undo.RecordObject(this, "Clear Project Child Folder Colors");
+
+                for (var i = 0; i < folderPaths.Length; i++)
+                {
+                    ClearFolderColorFromChildren(folderPaths[i]);
                 }
 
                 CleanupEmptyRules();
@@ -1442,25 +2051,34 @@ namespace UnityTool.HierarchyEnhancer
 
             public static GameObject ResolveObject(ObjectLabelRule rule)
             {
-                if (rule == null || string.IsNullOrEmpty(rule.objectId))
+                if (rule == null)
                 {
                     return null;
                 }
 
                 GameObject cachedObject;
-                if (ResolvedObjectCache.TryGetValue(rule.objectId, out cachedObject))
+                if (!string.IsNullOrEmpty(rule.objectId) && ResolvedObjectCache.TryGetValue(rule.objectId, out cachedObject))
                 {
                     return cachedObject;
                 }
 
                 GlobalObjectId globalObjectId;
-                if (!GlobalObjectId.TryParse(rule.objectId, out globalObjectId))
+                if (!string.IsNullOrEmpty(rule.objectId) && GlobalObjectId.TryParse(rule.objectId, out globalObjectId))
                 {
-                    return null;
+                    cachedObject = GlobalObjectId.GlobalObjectIdentifierToObjectSlow(globalObjectId) as GameObject;
+                    if (cachedObject != null)
+                    {
+                        ResolvedObjectCache[rule.objectId] = cachedObject;
+                        return cachedObject;
+                    }
                 }
 
-                cachedObject = GlobalObjectId.GlobalObjectIdentifierToObjectSlow(globalObjectId) as GameObject;
-                ResolvedObjectCache[rule.objectId] = cachedObject;
+                cachedObject = ResolveObjectByHierarchyPath(rule);
+                if (cachedObject != null && !string.IsNullOrEmpty(rule.objectId))
+                {
+                    ResolvedObjectCache[rule.objectId] = cachedObject;
+                }
+
                 return cachedObject;
             }
 
@@ -1473,6 +2091,7 @@ namespace UnityTool.HierarchyEnhancer
                 }
 
                 var rule = GetOrCreateObjectRule(gameObject, objectId);
+                UpdateObjectRuleIdentity(rule, gameObject, objectId);
                 if (string.IsNullOrWhiteSpace(label))
                 {
                     rule.label = string.Empty;
@@ -1480,7 +2099,6 @@ namespace UnityTool.HierarchyEnhancer
                     return;
                 }
 
-                rule.objectName = gameObject.name;
                 rule.label = label.Trim();
             }
 
@@ -1493,7 +2111,7 @@ namespace UnityTool.HierarchyEnhancer
                 }
 
                 var rule = GetOrCreateObjectRule(gameObject, objectId);
-                rule.objectName = gameObject.name;
+                UpdateObjectRuleIdentity(rule, gameObject, objectId);
                 rule.useTextColor = useTextColor;
                 rule.textColor = textColor;
                 rule.useRowColor = useRowColor;
@@ -1509,7 +2127,7 @@ namespace UnityTool.HierarchyEnhancer
                 }
 
                 var rule = GetOrCreateObjectRule(gameObject, objectId);
-                rule.objectName = gameObject.name;
+                UpdateObjectRuleIdentity(rule, gameObject, objectId);
                 rule.bookmarked = bookmarked;
             }
 
@@ -1522,7 +2140,7 @@ namespace UnityTool.HierarchyEnhancer
                 }
 
                 var rule = GetOrCreateObjectRule(gameObject, objectId);
-                rule.objectName = gameObject.name;
+                UpdateObjectRuleIdentity(rule, gameObject, objectId);
                 rule.label = string.IsNullOrWhiteSpace(style.label) ? string.Empty : style.label.Trim();
                 rule.useTextColor = style.useTextColor;
                 rule.textColor = style.textColor;
@@ -1553,7 +2171,7 @@ namespace UnityTool.HierarchyEnhancer
                 }
 
                 var rule = GetOrCreateObjectRule(gameObject, objectId);
-                rule.objectName = gameObject.name;
+                UpdateObjectRuleIdentity(rule, gameObject, objectId);
                 rule.label = string.IsNullOrWhiteSpace(template.label) ? string.Empty : template.label.Trim();
                 rule.useTextColor = template.useTextColor;
                 rule.textColor = template.textColor;
@@ -1595,9 +2213,187 @@ namespace UnityTool.HierarchyEnhancer
                     objectId = objectId,
                     objectName = gameObject.name
                 };
+                UpdateObjectRuleIdentity(newRule, gameObject, objectId);
                 objectLabelRules.Add(newRule);
                 objectRuleById[objectId] = newRule;
                 return newRule;
+            }
+
+            private void SetFolderColor(string folderPath, bool enabled, Color color)
+            {
+                folderPath = NormalizeAssetPath(folderPath);
+                if (string.IsNullOrEmpty(folderPath) || !AssetDatabase.IsValidFolder(folderPath))
+                {
+                    return;
+                }
+
+                if (!enabled)
+                {
+                    folderColorRules.RemoveAll(rule => rule == null || NormalizeAssetPath(rule.folderPath) == folderPath);
+                    folderColorRuleByPath.Remove(folderPath);
+                    return;
+                }
+
+                var rule = GetOrCreateFolderColorRule(folderPath);
+                rule.color = color;
+            }
+
+            private void ApplyFolderColorToChildren(string folderPath)
+            {
+                folderPath = NormalizeAssetPath(folderPath);
+                if (string.IsNullOrEmpty(folderPath) || !AssetDatabase.IsValidFolder(folderPath))
+                {
+                    return;
+                }
+
+                Color color;
+                if (!TryGetFolderColor(folderPath, out color))
+                {
+                    return;
+                }
+
+                var childFolderPaths = new List<string>();
+                CollectChildFolderPaths(folderPath, childFolderPaths);
+                for (var i = 0; i < childFolderPaths.Count; i++)
+                {
+                    SetFolderColor(childFolderPaths[i], true, color);
+                }
+            }
+
+            private void ClearFolderColorFromChildren(string folderPath)
+            {
+                folderPath = NormalizeAssetPath(folderPath);
+                if (string.IsNullOrEmpty(folderPath) || !AssetDatabase.IsValidFolder(folderPath))
+                {
+                    return;
+                }
+
+                var childFolderPaths = new List<string>();
+                CollectChildFolderPaths(folderPath, childFolderPaths);
+                for (var i = 0; i < childFolderPaths.Count; i++)
+                {
+                    SetFolderColor(childFolderPaths[i], false, Color.clear);
+                }
+            }
+
+            private FolderColorRule GetOrCreateFolderColorRule(string folderPath)
+            {
+                RebuildLookupCacheIfNeeded();
+
+                FolderColorRule existingRule;
+                if (folderColorRuleByPath.TryGetValue(folderPath, out existingRule) && existingRule != null)
+                {
+                    return existingRule;
+                }
+
+                var newRule = new FolderColorRule
+                {
+                    folderPath = folderPath
+                };
+                folderColorRules.Add(newRule);
+                folderColorRuleByPath[folderPath] = newRule;
+                return newRule;
+            }
+
+            private static void CollectChildFolderPaths(string folderPath, List<string> result)
+            {
+                if (result == null || string.IsNullOrEmpty(folderPath) || !System.IO.Directory.Exists(folderPath))
+                {
+                    return;
+                }
+
+                var directories = System.IO.Directory.GetDirectories(folderPath, "*", System.IO.SearchOption.AllDirectories);
+                for (var i = 0; i < directories.Length; i++)
+                {
+                    var childPath = NormalizeAssetPath(directories[i]);
+                    if (AssetDatabase.IsValidFolder(childPath))
+                    {
+                        result.Add(childPath);
+                    }
+                }
+            }
+
+            private static void UpdateObjectRuleIdentity(ObjectLabelRule rule, GameObject gameObject, string objectId)
+            {
+                if (rule == null || gameObject == null)
+                {
+                    return;
+                }
+
+                rule.objectId = objectId;
+                rule.objectName = gameObject.name;
+                rule.scenePath = gameObject.scene.path;
+                rule.hierarchyPath = GetHierarchyPath(gameObject);
+            }
+
+            private static GameObject ResolveObjectByHierarchyPath(ObjectLabelRule rule)
+            {
+                if (string.IsNullOrEmpty(rule.hierarchyPath))
+                {
+                    return null;
+                }
+
+                var gameObjects = Resources.FindObjectsOfTypeAll<GameObject>();
+                for (var i = 0; i < gameObjects.Length; i++)
+                {
+                    var gameObject = gameObjects[i];
+                    if (gameObject == null || !gameObject.scene.IsValid())
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(gameObject.scene.path, rule.scenePath ?? string.Empty, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(GetHierarchyPath(gameObject), rule.hierarchyPath, StringComparison.Ordinal))
+                    {
+                        return gameObject;
+                    }
+                }
+
+                return null;
+            }
+
+            private ObjectLabelRule FindRuleByHierarchyPath(GameObject gameObject)
+            {
+                var hierarchyPath = GetHierarchyPath(gameObject);
+                var scenePath = gameObject.scene.path;
+                for (var i = 0; i < objectLabelRules.Count; i++)
+                {
+                    var rule = objectLabelRules[i];
+                    if (rule == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(rule.scenePath ?? string.Empty, scenePath, StringComparison.Ordinal) &&
+                        string.Equals(rule.hierarchyPath, hierarchyPath, StringComparison.Ordinal))
+                    {
+                        return rule;
+                    }
+                }
+
+                return null;
+            }
+
+            private static string GetHierarchyPath(GameObject gameObject)
+            {
+                if (gameObject == null)
+                {
+                    return string.Empty;
+                }
+
+                var path = gameObject.name;
+                var parent = gameObject.transform.parent;
+                while (parent != null)
+                {
+                    path = parent.name + "/" + path;
+                    parent = parent.parent;
+                }
+
+                return path;
             }
 
             private void CleanupEmptyRules()
@@ -1605,7 +2401,13 @@ namespace UnityTool.HierarchyEnhancer
                 objectLabelRules.RemoveAll(rule =>
                     rule == null ||
                     (string.IsNullOrEmpty(rule.label) && !rule.bookmarked && !rule.useTextColor && !rule.useRowColor));
+                folderColorRules.RemoveAll(rule => rule == null || string.IsNullOrEmpty(rule.folderPath));
                 lookupCacheReady = false;
+            }
+
+            private static string NormalizeAssetPath(string path)
+            {
+                return string.IsNullOrEmpty(path) ? string.Empty : path.Replace('\\', '/');
             }
 
             private static string GetObjectId(GameObject gameObject)
@@ -1639,7 +2441,20 @@ namespace UnityTool.HierarchyEnhancer
                     return false;
                 }
 
-                return objectRuleById.TryGetValue(objectId, out rule) && rule != null;
+                if (objectRuleById.TryGetValue(objectId, out rule) && rule != null)
+                {
+                    return true;
+                }
+
+                rule = FindRuleByHierarchyPath(gameObject);
+                if (rule == null)
+                {
+                    return false;
+                }
+
+                UpdateObjectRuleIdentity(rule, gameObject, objectId);
+                objectRuleById[objectId] = rule;
+                return true;
             }
 
             private void RebuildLookupCacheIfNeeded()
@@ -1700,18 +2515,20 @@ namespace UnityTool.HierarchyEnhancer
             }
         }
 
-        [CustomEditor(typeof(HierarchyEnhancerSettings))]
+        [CustomEditor(typeof(HierarchyEnhancerSettings), true)]
         private sealed class HierarchyEnhancerSettingsEditor : Editor
         {
             private SerializedProperty badgeRules;
             private SerializedProperty objectLabelRules;
             private SerializedProperty styleTemplates;
+            private SerializedProperty folderColorRules;
 
             private void OnEnable()
             {
                 badgeRules = serializedObject.FindProperty("badgeRules");
                 objectLabelRules = serializedObject.FindProperty("objectLabelRules");
                 styleTemplates = serializedObject.FindProperty("styleTemplates");
+                folderColorRules = serializedObject.FindProperty("folderColorRules");
             }
 
             public override void OnInspectorGUI()
@@ -1719,6 +2536,8 @@ namespace UnityTool.HierarchyEnhancer
                 serializedObject.Update();
 
                 EditorGUILayout.PropertyField(objectLabelRules, true);
+                EditorGUILayout.Space(8f);
+                EditorGUILayout.PropertyField(folderColorRules, true);
                 EditorGUILayout.Space(8f);
                 EditorGUILayout.PropertyField(styleTemplates, true);
                 EditorGUILayout.Space(8f);
@@ -1802,6 +2621,64 @@ namespace UnityTool.HierarchyEnhancer
                 }
 
                 return settings.TryGetObjectLabel(gameObjects[0], out var currentLabel) ? currentLabel : string.Empty;
+            }
+        }
+
+        private sealed class ProjectFolderColorWindow : EditorWindow
+        {
+            private string[] folderPaths;
+            private Color color = new Color(1f, 0.22f, 0.15f, 0.34f);
+
+            public static void Open(string[] paths)
+            {
+                var window = GetWindow<ProjectFolderColorWindow>(true, "文件夹颜色");
+                window.folderPaths = paths;
+                window.LoadInitialValues();
+                window.minSize = new Vector2(360f, 112f);
+                window.ShowUtility();
+            }
+
+            private void LoadInitialValues()
+            {
+                color = new Color(1f, 0.22f, 0.15f, 0.34f);
+
+                if (folderPaths == null || folderPaths.Length == 0)
+                {
+                    return;
+                }
+
+                var settings = GetSettings();
+                if (settings != null && settings.TryGetFolderColor(folderPaths[0], out var currentColor))
+                {
+                    color = currentColor;
+                }
+            }
+
+            private void OnGUI()
+            {
+                if (folderPaths == null || folderPaths.Length == 0)
+                {
+                    EditorGUILayout.HelpBox("请先在 Project 面板选中一个或多个文件夹。", MessageType.Info);
+                    return;
+                }
+
+                EditorGUILayout.LabelField("选中文件夹", folderPaths.Length.ToString());
+                color = EditorGUILayout.ColorField("颜色", color);
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("应用"))
+                    {
+                        GetOrCreateSettings().SetFolderColor(folderPaths, true, color);
+                        Close();
+                    }
+
+                    if (GUILayout.Button("清除标记"))
+                    {
+                        GetOrCreateSettings().SetFolderColor(folderPaths, false, Color.clear);
+                        Close();
+                    }
+                }
             }
         }
 
@@ -1963,7 +2840,8 @@ namespace UnityTool.HierarchyEnhancer
             }
         }
 
-        private sealed class MarkManagerWindow : EditorWindow
+        [Serializable]
+        public class MarkManagerWindow : EditorWindow
         {
             private Vector2 scrollPosition;
             private string searchText = string.Empty;
@@ -1994,12 +2872,23 @@ namespace UnityTool.HierarchyEnhancer
 
             public static void Open()
             {
-                var window = GetWindow<MarkManagerWindow>("层级标记管理器");
-                window.minSize = new Vector2(520f, 320f);
+                var window = GetWindow<global::UnityTool.HierarchyEnhancer.MarkManagerWindow>("层级标记管理器");
+                window.ConfigureWindow();
                 window.Show();
             }
 
-            private void OnGUI()
+            protected void OnEnable()
+            {
+                ConfigureWindow();
+            }
+
+            protected void ConfigureWindow()
+            {
+                titleContent = new GUIContent("层级标记管理器");
+                minSize = new Vector2(520f, 320f);
+            }
+
+            protected void OnGUI()
             {
                 var settings = GetSettings();
                 if (settings == null)
@@ -2046,6 +2935,7 @@ namespace UnityTool.HierarchyEnhancer
                     {
                         DrawPreferenceToggle("启用", EnabledKey, IsEnabled);
                         DrawPreferenceToggle("层级辅助线", GuideLinesKey, ShowGuideLines);
+                        DrawPreferenceToggle("彩色辅助线", ColoredGuideLinesKey, ShowColoredGuideLines);
                         DrawPreferenceToggle("组件标签", BadgesKey, ShowBadges);
                     }
 
@@ -2163,31 +3053,46 @@ namespace UnityTool.HierarchyEnhancer
                         {
                             if (GUILayout.Button("红色"))
                             {
-                                settings.SetObjectColor(Selection.gameObjects, true, new Color(1f, 0.28f, 0.22f, 1f), true, new Color(1f, 0.22f, 0.15f, 0.28f));
+                                SetSelectionRowColor(settings, new Color(1f, 0.22f, 0.15f, 0.28f));
+                            }
+
+                            if (GUILayout.Button("橙色"))
+                            {
+                                SetSelectionRowColor(settings, new Color(1f, 0.45f, 0.08f, 0.26f));
                             }
 
                             if (GUILayout.Button("黄色"))
                             {
-                                settings.SetObjectColor(Selection.gameObjects, true, new Color(1f, 0.78f, 0.22f, 1f), true, new Color(1f, 0.64f, 0.12f, 0.24f));
+                                SetSelectionRowColor(settings, new Color(1f, 0.64f, 0.12f, 0.24f));
                             }
 
                             if (GUILayout.Button("绿色"))
                             {
-                                settings.SetObjectColor(Selection.gameObjects, true, new Color(0.45f, 0.9f, 0.48f, 1f), true, new Color(0.15f, 0.65f, 0.25f, 0.24f));
+                                SetSelectionRowColor(settings, new Color(0.15f, 0.65f, 0.25f, 0.24f));
+                            }
+
+                            if (GUILayout.Button("青色"))
+                            {
+                                SetSelectionRowColor(settings, new Color(0.05f, 0.72f, 0.72f, 0.24f));
                             }
 
                             if (GUILayout.Button("蓝色"))
                             {
-                                settings.SetObjectColor(Selection.gameObjects, true, new Color(0.45f, 0.72f, 1f, 1f), true, new Color(0.15f, 0.42f, 1f, 0.24f));
+                                SetSelectionRowColor(settings, new Color(0.15f, 0.42f, 1f, 0.24f));
                             }
 
                             if (GUILayout.Button("紫色"))
                             {
-                                settings.SetObjectColor(Selection.gameObjects, true, new Color(0.82f, 0.58f, 1f, 1f), true, new Color(0.52f, 0.25f, 0.85f, 0.24f));
+                                SetSelectionRowColor(settings, new Color(0.52f, 0.25f, 0.85f, 0.24f));
                             }
                         }
                     }
                 }
+            }
+
+            private static void SetSelectionRowColor(HierarchyEnhancerSettings settings, Color rowColor)
+            {
+                settings.SetObjectColor(Selection.gameObjects, false, Color.white, true, rowColor);
             }
 
             private void DrawApplyToChildrenActions(HierarchyEnhancerSettings settings)
